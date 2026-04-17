@@ -1,0 +1,61 @@
+# AI Agent 开发学习指南 - Python 依赖
+# Learning Agent Development - Python Dependencies
+
+# ─── 核心依赖 / Core Dependencies ───────────────────────────────────────────
+
+# OpenAI API 客户端 (示例 01-05 使用)
+openai>=1.30.0
+
+# Anthropic API 客户端 (指南中示例使用)
+anthropic>=0.25.0
+
+# ─── Agent 框架 / Agent Frameworks ──────────────────────────────────────────
+
+# LangChain 核心 (指南 02, 03 中有示例)
+# langchain>=0.2.0
+# langchain-openai>=0.1.0
+# langchain-community>=0.2.0
+
+# LlamaIndex (RAG 应用)
+# llama-index>=0.10.0
+
+# AutoGen (多智能体框架，指南 05 中有示例)
+# pyautogen>=0.2.0
+
+# CrewAI (角色扮演多智能体)
+# crewai>=0.28.0
+
+# ─── 向量数据库 / Vector Databases ──────────────────────────────────────────
+
+# ChromaDB (本地向量数据库，指南 04 中有示例)
+# chromadb>=0.5.0
+
+# Pinecone (云端向量数据库)
+# pinecone-client>=3.0.0
+
+# ─── 搜索工具 / Search Tools ────────────────────────────────────────────────
+
+# Tavily 搜索 API
+# tavily-python>=0.3.0
+
+# ─── 工具库 / Utility Libraries ─────────────────────────────────────────────
+
+# 数据验证
+pydantic>=2.0.0
+
+# 环境变量管理
+python-dotenv>=1.0.0
+
+# HTTP 请求
+requests>=2.31.0
+
+# ─── 开发依赖 / Development Dependencies ────────────────────────────────────
+
+# 代码格式化
+# ruff>=0.4.0
+
+# 类型检查
+# mypy>=1.8.0
+
+# 测试
+pytest>=7.4.0
