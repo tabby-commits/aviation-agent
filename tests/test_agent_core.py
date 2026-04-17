@@ -61,12 +61,12 @@ class TestCalculator:
     def test_division_by_zero(self):
         calc = self._get_calculator()
         result = calc("1 / 0")
-        assert "除以零" in result or "ZeroDivisionError" in result or "错误" in result
+        assert result == "错误：除以零"
 
     def test_invalid_expression(self):
         calc = self._get_calculator()
         result = calc("invalid_func()")
-        assert "错误" in result or "Error" in result.lower()
+        assert result.startswith("计算错误:")
 
     def test_security_no_builtins(self):
         """确保危险的内置函数无法被调用"""
