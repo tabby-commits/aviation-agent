@@ -3,6 +3,7 @@ package com.kama.jchatmind.controller;
 import com.kama.jchatmind.model.common.ApiResponse;
 import com.kama.jchatmind.model.request.CreateDocumentRequest;
 import com.kama.jchatmind.model.request.UpdateDocumentRequest;
+import com.kama.jchatmind.model.response.BatchSubmitResponse;
 import com.kama.jchatmind.model.response.CreateDocumentResponse;
 import com.kama.jchatmind.model.response.GetDocumentsResponse;
 import com.kama.jchatmind.service.DocumentFacadeService;
@@ -41,6 +42,14 @@ public class DocumentController {
             @RequestParam("kbId") String kbId,
             @RequestParam("file") MultipartFile file) {
         return ApiResponse.success(documentFacadeService.uploadDocument(kbId, file));
+    }
+
+    // 批量上传文档（异步处理，SSE推送进度）
+    @PostMapping("/documents/upload/batch")
+    public ApiResponse<BatchSubmitResponse> uploadDocumentsBatch(
+            @RequestParam("kbId") String kbId,
+            @RequestParam("files") MultipartFile[] files) {
+        return ApiResponse.success(documentFacadeService.uploadDocumentsBatch(kbId, files));
     }
 
     // 删除文档

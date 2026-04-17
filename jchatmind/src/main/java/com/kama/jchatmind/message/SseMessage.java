@@ -1,5 +1,6 @@
 package com.kama.jchatmind.message;
 
+import com.kama.jchatmind.model.response.BatchResultResponse;
 import com.kama.jchatmind.model.vo.ChatMessageVO;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -21,6 +22,14 @@ public class SseMessage {
         private ChatMessageVO message;
         private String statusText;
         private Boolean done;
+        // 批量上传进度
+        private String batchId;
+        private Integer processed;
+        private Integer total;
+        private Integer successCount;
+        private Integer failCount;
+        // 批量上传最终结果
+        private BatchResultResponse batchResult;
     }
 
     @Data
@@ -36,11 +45,15 @@ public class SseMessage {
     // 3. AI 思考中
     // 4. AI 执行中
     // 5. AI 完成
+    // 6. 批量上传进度
+    // 7. 批量上传完成
     public enum Type {
         AI_GENERATED_CONTENT,
         AI_PLANNING,
         AI_THINKING,
         AI_EXECUTING,
         AI_DONE,
+        BATCH_PROGRESS,
+        BATCH_COMPLETE,
     }
 }

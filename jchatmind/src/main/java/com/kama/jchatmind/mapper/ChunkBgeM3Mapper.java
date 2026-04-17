@@ -22,6 +22,8 @@ public interface ChunkBgeM3Mapper {
 
     int updateById(ChunkBgeM3 chunkBgeM3);
 
+    int countByKbId(@Param("kbId") String kbId);
+
     List<ChunkBgeM3> similaritySearch(
             @Param("kbId") String kbId,
             @Param("vectorLiteral") String vectorLiteral,

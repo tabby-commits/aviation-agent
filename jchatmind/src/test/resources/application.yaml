@@ -1,6 +1,6 @@
 spring:
   application:
-    name: jchatmind
+    name: jchatmind-test
   datasource:
     url: jdbc:postgresql://localhost:5432/jchatmind
     username: postgres
@@ -10,7 +10,7 @@ spring:
     host: smtp.qq.com
     port: 587
     username: 1255354811@qq.com
-    password: lcmxzroxakrngbeg # 邮箱授权码
+    password: lcmxzroxakrngbeg
     default-encoding: UTF-8
     properties:
       mail:
@@ -21,17 +21,22 @@ spring:
             required: true
   ai:
     deepseek:
-      api-key: sk-9eaf7d9714de462f8d9c23430dfe25e1
-      base-url: https://api.deepseek.com
+      api-key: ${DEEPSEEK_API_KEY:sk-test}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
       chat:
         options:
           model: deepseek-chat
     zhipuai:
-      api-key: 24cd783a283541c3a01e364a368ed997.AHTaMTMeUVycz4CG
-      base-url: https://open.bigmodel.cn/api/paas
+      api-key: ${ZHIPUAI_API_KEY:sk-test}
+      base-url: ${ZHIPUAI_BASE_URL:https://open.bigmodel.cn/api/paas}
       chat:
         options:
           model: glm-4.6
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 500MB
+
 mybatis:
   type-aliases-package: com.kama.jchatmind.model.entity
   mapper-locations: classpath:mapper/*.xml
@@ -39,4 +44,4 @@ mybatis:
 
 document:
   storage:
-    base-path: ./data/documents
+    base-path: ./data/test-documents

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./mvnw test-compile:*)",
+      "Bash(./mvnw process-test-resources:*)",
+      "Bash(./mvnw resources:resources -q)",
+      "Bash(./mvnw test-resources:*)",
+      "Bash(./mvnw test:*)",
+      "Bash(./mvnw compile:*)"
+    ]
+  }
+}

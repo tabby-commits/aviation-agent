@@ -53,6 +53,12 @@
         WHERE id = CAST(#{id} AS uuid)
     </select>
 
+    <select id="countByKbId" resultType="int">
+        SELECT COUNT(*)
+        FROM chunk_bge_m3
+        WHERE kb_id = CAST(#{kbId} AS uuid)
+    </select>
+
     <delete id="deleteById">
         DELETE
         FROM chunk_bge_m3

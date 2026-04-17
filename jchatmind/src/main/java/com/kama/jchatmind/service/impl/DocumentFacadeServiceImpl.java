@@ -4,11 +4,15 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.kama.jchatmind.converter.DocumentConverter;
 import com.kama.jchatmind.exception.BizException;
 import com.kama.jchatmind.mapper.DocumentMapper;
+import com.kama.jchatmind.message.SseMessage;
 import com.kama.jchatmind.model.dto.DocumentDTO;
 import com.kama.jchatmind.model.entity.Document;
 import com.kama.jchatmind.model.request.CreateDocumentRequest;
 import com.kama.jchatmind.model.request.UpdateDocumentRequest;
+import com.kama.jchatmind.model.response.BatchResultResponse;
+import com.kama.jchatmind.model.response.BatchSubmitResponse;
 import com.kama.jchatmind.model.response.CreateDocumentResponse;
+import com.kama.jchatmind.model.response.FileResult;
 import com.kama.jchatmind.model.response.GetDocumentsResponse;
 import com.kama.jchatmind.model.vo.DocumentVO;
 import com.kama.jchatmind.mapper.ChunkBgeM3Mapper;
@@ -17,8 +21,10 @@ import com.kama.jchatmind.service.DocumentFacadeService;
 import com.kama.jchatmind.service.DocumentStorageService;
 import com.kama.jchatmind.service.MarkdownParserService;
 import com.kama.jchatmind.service.RagService;
+import com.kama.jchatmind.service.SseService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -28,10 +34,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
-@AllArgsConstructor
 @Slf4j
 public class DocumentFacadeServiceImpl implements DocumentFacadeService {
 
@@ -41,6 +53,30 @@ public class DocumentFacadeServiceImpl implements DocumentFacadeService {
     private final MarkdownParserService markdownParserService;
     private final RagService ragService;
     private final ChunkBgeM3Mapper chunkBgeM3Mapper;
+    private final SseService sseService;
+    private final Executor docProcessExecutor;
+
+    private static final int PROGRESS_REPORT_INTERVAL = 50;
+    private static final int BATCH_TIMEOUT_MINUTES = 10;
+
+    public DocumentFacadeServiceImpl(
+            DocumentMapper documentMapper,
+            DocumentConverter documentConverter,
+            DocumentStorageService documentStorageService,
+            MarkdownParserService markdownParserService,
+            RagService ragService,
+            ChunkBgeM3Mapper chunkBgeM3Mapper,
+            SseService sseService,
+            @Qualifier("docProcessExecutor") Executor docProcessExecutor) {
+        this.documentMapper = documentMapper;
+        this.documentConverter = documentConverter;
+        this.documentStorageService = documentStorageService;
+        this.markdownParserService = markdownParserService;
+        this.ragService = ragService;
+        this.chunkBgeM3Mapper = chunkBgeM3Mapper;
+        this.sseService = sseService;
+        this.docProcessExecutor = docProcessExecutor;
+    }
 
     @Override
     public GetDocumentsResponse getDocuments() {
@@ -172,6 +208,211 @@ public class DocumentFacadeServiceImpl implements DocumentFacadeService {
         } catch (IOException e) {
             log.error("文件保存失败", e);
             throw new BizException("文件保存失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public BatchSubmitResponse uploadDocumentsBatch(String kbId, MultipartFile[] files) {
+        if (files == null || files.length == 0) {
+            throw new BizException("上传的文件列表为空");
+        }
+
+        String batchId = UUID.randomUUID().toString();
+        int totalCount = files.length;
+        log.info("开始批量上传: batchId={}, kbId={}, totalFiles={}", batchId, kbId, totalCount);
+
+        // 统计 md 文件数量，用于初始化 CountDownLatch
+        long mdFileCount = Arrays.stream(files)
+                .filter(f -> !f.isEmpty())
+                .filter(f -> {
+                    String ft = getFileType(f.getOriginalFilename());
+                    return "md".equalsIgnoreCase(ft) || "markdown".equalsIgnoreCase(ft);
+                })
+                .count();
+
+        // 线程安全的结果收集
+        List<FileResult> fileResults = new CopyOnWriteArrayList<>();
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger failCount = new AtomicInteger(0);
+        AtomicInteger processed = new AtomicInteger(0);
+
+        CountDownLatch latch = new CountDownLatch((int) mdFileCount);
+
+        // 提交任务到线程池
+        for (MultipartFile file : files) {
+            docProcessExecutor.execute(() -> {
+                try {
+                    processFileBatch(file, kbId, fileResults);
+                    successCount.incrementAndGet();
+                } catch (Exception e) {
+                    failCount.incrementAndGet();
+                    log.error("批量文件处理异常: filename={}", file.getOriginalFilename(), e);
+                } finally {
+                    int currentProcessed = processed.incrementAndGet();
+                    latch.countDown();
+
+                    // 每处理 PROGRESS_REPORT_INTERVAL 条推送一次进度
+                    if (currentProcessed % PROGRESS_REPORT_INTERVAL == 0 || currentProcessed == totalCount) {
+                        pushBatchProgress(batchId, currentProcessed, totalCount, successCount.get(), failCount.get());
+                    }
+                    // 超时兜底：每 100 条打印一次日志
+                    if (currentProcessed % 100 == 0) {
+                        log.info("批量处理进度: batchId={}, processed={}/{}", batchId, currentProcessed, totalCount);
+                    }
+                }
+            });
+        }
+
+        // 主线程等待，最多等 BATCH_TIMEOUT_MINUTES 分钟
+        boolean completed = false;
+        try {
+            completed = latch.await(BATCH_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("批量处理被中断: batchId={}", batchId);
+        }
+
+        String status;
+        if (completed) {
+            status = BatchSubmitResponse.Status.COMPLETED.name();
+            log.info("批量处理完成: batchId={}, success={}, fail={}", batchId, successCount.get(), failCount.get());
+        } else {
+            status = BatchSubmitResponse.Status.TIMEOUT.name();
+            log.warn("批量处理超时: batchId={}, processed={}/{}, success={}, fail={}",
+                    batchId, processed.get(), totalCount, successCount.get(), failCount.get());
+        }
+
+        // 推送最终状态
+        pushBatchComplete(batchId, status, totalCount, successCount.get(), failCount.get(), fileResults);
+
+        return BatchSubmitResponse.builder()
+                .batchId(batchId)
+                .totalCount(totalCount)
+                .status(status)
+                .message("批次已提交，" + (completed ? "处理完成" : "处理超时"))
+                .build();
+    }
+
+    private void processFileBatch(MultipartFile file, String kbId, List<FileResult> fileResults) {
+        String filename = file.getOriginalFilename();
+        String filetype = getFileType(filename);
+
+        // 非 md 文件跳过
+        if (!"md".equalsIgnoreCase(filetype) && !"markdown".equalsIgnoreCase(filetype)) {
+            fileResults.add(FileResult.builder()
+                    .filename(filename)
+                    .status(FileResult.Status.SKIPPED)
+                    .build());
+            return;
+        }
+
+        try {
+            if (file.isEmpty()) {
+                fileResults.add(FileResult.builder()
+                        .filename(filename)
+                        .status(FileResult.Status.FAILED)
+                        .error("文件为空")
+                        .build());
+                return;
+            }
+
+            long fileSize = file.getSize();
+
+            // 创建文档记录
+            DocumentDTO documentDTO = DocumentDTO.builder()
+                    .kbId(kbId)
+                    .filename(filename)
+                    .filetype(filetype)
+                    .size(fileSize)
+                    .build();
+
+            Document document = documentConverter.toEntity(documentDTO);
+            LocalDateTime now = LocalDateTime.now();
+            document.setCreatedAt(now);
+            document.setUpdatedAt(now);
+
+            int result = documentMapper.insert(document);
+            if (result <= 0) {
+                throw new BizException("创建文档记录失败");
+            }
+
+            String documentId = document.getId();
+
+            // 保存文件
+            String filePath = documentStorageService.saveFile(kbId, documentId, file);
+
+            // 更新文档记录
+            DocumentDTO.MetaData metadata = new DocumentDTO.MetaData();
+            metadata.setFilePath(filePath);
+            documentDTO.setMetadata(metadata);
+            documentDTO.setId(documentId);
+            documentDTO.setCreatedAt(now);
+            documentDTO.setUpdatedAt(now);
+
+            Document updatedDocument = documentConverter.toEntity(documentDTO);
+            updatedDocument.setId(documentId);
+            updatedDocument.setCreatedAt(now);
+            updatedDocument.setUpdatedAt(now);
+
+            documentMapper.updateById(updatedDocument);
+
+            // 处理 Markdown，生成 chunks
+            processMarkdownDocument(kbId, documentId, filePath);
+
+            fileResults.add(FileResult.builder()
+                    .filename(filename)
+                    .documentId(documentId)
+                    .status(FileResult.Status.SUCCESS)
+                    .build());
+
+        } catch (Exception e) {
+            log.error("文件处理失败: filename={}", filename, e);
+            fileResults.add(FileResult.builder()
+                    .filename(filename)
+                    .status(FileResult.Status.FAILED)
+                    .error(e.getMessage())
+                    .build());
+        }
+    }
+
+    private void pushBatchProgress(String batchId, int processed, int total, int success, int fail) {
+        try {
+            SseMessage message = SseMessage.builder()
+                    .type(SseMessage.Type.BATCH_PROGRESS)
+                    .payload(SseMessage.Payload.builder()
+                            .batchId(batchId)
+                            .processed(processed)
+                            .total(total)
+                            .successCount(success)
+                            .failCount(fail)
+                            .build())
+                    .build();
+            sseService.send(batchId, message);
+        } catch (Exception e) {
+            log.warn("推送批量处理进度失败: batchId={}, error={}", batchId, e.getMessage());
+        }
+    }
+
+    private void pushBatchComplete(String batchId, String status, int total, int success, int fail, List<FileResult> results) {
+        try {
+            BatchResultResponse batchResult = BatchResultResponse.builder()
+                    .batchId(batchId)
+                    .status(status)
+                    .totalCount(total)
+                    .successCount(success)
+                    .failCount(fail)
+                    .results(results)
+                    .build();
+
+            SseMessage message = SseMessage.builder()
+                    .type(SseMessage.Type.BATCH_COMPLETE)
+                    .payload(SseMessage.Payload.builder()
+                            .batchResult(batchResult)
+                            .build())
+                    .build();
+            sseService.send(batchId, message);
+        } catch (Exception e) {
+            log.warn("推送批量处理完成状态失败: batchId={}, error={}", batchId, e.getMessage());
         }
     }
 
