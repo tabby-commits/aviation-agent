@@ -6,7 +6,18 @@
       "Bash(./mvnw resources:resources -q)",
       "Bash(./mvnw test-resources:*)",
       "Bash(./mvnw test:*)",
-      "Bash(./mvnw compile:*)"
+      "Bash(./mvnw compile:*)",
+      "mcp__context7__query-docs",
+      "mcp__web-reader__webReader",
+      "mcp__web-search-prime__web_search_prime",
+      "Bash(mvn compile *)",
+      "Bash(mvn spring-boot:run -Dspring-boot.run.jvmArguments=\"-Dserver.port=8080\")",
+      "Bash(curl -s http://localhost:8080/api/tools)",
+      "Bash(mvn spring-boot:run -q)",
+      "Bash(netstat -ano)",
+      "Bash(mvn test:*)",
+      "WebFetch(domain:developer.aliyun.com)",
+      "mcp__MiniMax__web_search"
     ]
   }
 }
