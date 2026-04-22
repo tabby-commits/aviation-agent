@@ -1,6 +1,10 @@
 package com.kama.jchatmind.service.impl;
 
 import com.kama.jchatmind.config.RagHybridProperties;
+import com.kama.jchatmind.evaluation.model.RetrievalHit;
+import com.kama.jchatmind.evaluation.model.StructuredRetrievalResult;
+import com.kama.jchatmind.evaluation.model.VectorSearchHit;
+import com.kama.jchatmind.evaluation.service.StructuredRetrievalService;
 import com.kama.jchatmind.mapper.ChunkBgeM3Mapper;
 import com.kama.jchatmind.model.entity.ChunkBgeM3;
 import com.kama.jchatmind.service.RagService;
@@ -15,6 +19,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +28,7 @@ import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Service
-public class RagServiceImpl implements RagService {
+public class RagServiceImpl implements RagService, StructuredRetrievalService {
 
     private final WebClient webClient;
     private final ChunkBgeM3Mapper chunkBgeM3Mapper;
@@ -52,17 +57,9 @@ public class RagServiceImpl implements RagService {
     }
 
     private float[] doEmbed(String text) {
-        EmbeddingResponse resp = webClient.post()
-                .uri("/api/embeddings")
-                .bodyValue(Map.of(
-                        "model", "bge-m3",
-                        "prompt", text
-                ))
-                .retrieve()
-                .bodyToMono(EmbeddingResponse.class)
-                .block();
-        Assert.notNull(resp, "Embedding response cannot be null");
-        return resp.getEmbedding();
+        List<float[]> embeddings = embedBatch(Collections.singletonList(text));
+        Assert.notEmpty(embeddings, "Embedding response cannot be empty");
+        return embeddings.get(0);
     }
 
     @Override
@@ -90,26 +87,35 @@ public class RagServiceImpl implements RagService {
 
     @Override
     public List<String> similaritySearch(String kbId, String title) {
-        List<ChunkBgeM3> chunks = vectorRecall(kbId, title, 3);
-        return chunks.stream().map(ChunkBgeM3::getContent).toList();
+        StructuredRetrievalResult retrievalResult = buildVectorOnlyResult(kbId, title, 3, 3);
+        return retrievalResult.getHits().stream()
+                .map(RetrievalHit::getContent)
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     @Override
     public List<String> hybridSearch(String kbId, String query, int topN) {
+        return retrieve(kbId, query, topN).getHits().stream()
+                .map(RetrievalHit::getContent)
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    @Override
+    public StructuredRetrievalResult retrieve(String kbId, String query, int topN) {
         int finalTopN = topN > 0 ? topN : hybridProperties.getFinalTopN();
 
         if (!hybridProperties.isEnabled()) {
-            return similaritySearch(kbId, query).stream()
-                    .limit(finalTopN)
-                    .toList();
+            return buildVectorOnlyResult(kbId, query, 3, finalTopN);
         }
 
         int vectorK = Math.max(finalTopN, hybridProperties.getVectorTopK());
         int bm25K = Math.max(finalTopN, hybridProperties.getBm25TopK());
 
-        CompletableFuture<List<ChunkBgeM3>> vectorFuture = CompletableFuture.supplyAsync(() -> {
+        CompletableFuture<List<VectorSearchHit>> vectorFuture = CompletableFuture.supplyAsync(() -> {
             try {
-                return vectorRecall(kbId, query, vectorK);
+                return vectorRecallDetailed(kbId, query, vectorK);
             } catch (Exception e) {
                 log.warn("Vector recall failed, falling back to empty result: kbId={}, err={}", kbId, e.getMessage());
                 return Collections.emptyList();
@@ -124,35 +130,78 @@ public class RagServiceImpl implements RagService {
             }
         });
 
-        List<ChunkBgeM3> vectorHits;
+        List<VectorSearchHit> vectorHits;
         List<InvertedIndex.ScoredDoc> bm25Hits;
         try {
             vectorHits = vectorFuture.get();
             bm25Hits = bm25Future.get();
         } catch (Exception e) {
             log.warn("Hybrid recall await failed, falling back to vector only: kbId={}, err={}", kbId, e.getMessage());
-            return similaritySearch(kbId, query).stream().limit(finalTopN).toList();
+            return buildVectorOnlyResult(kbId, query, 3, finalTopN);
         }
 
         List<String> fusedIds = rrfFuse(vectorHits, bm25Hits, finalTopN);
         if (fusedIds.isEmpty()) {
-            return Collections.emptyList();
+            return StructuredRetrievalResult.builder()
+                    .kbId(kbId)
+                    .query(query)
+                    .topN(finalTopN)
+                    .vectorK(vectorK)
+                    .bm25K(bm25K)
+                    .hits(Collections.emptyList())
+                    .build();
         }
 
-        return resolveContents(fusedIds, vectorHits);
+        return StructuredRetrievalResult.builder()
+                .kbId(kbId)
+                .query(query)
+                .topN(finalTopN)
+                .vectorK(vectorK)
+                .bm25K(bm25K)
+                .hits(mergeHybridHits(fusedIds, vectorHits, bm25Hits))
+                .build();
     }
 
-    private List<ChunkBgeM3> vectorRecall(String kbId, String query, int k) {
+    private StructuredRetrievalResult buildVectorOnlyResult(String kbId, String query, int vectorLimit, int finalTopN) {
+        List<VectorSearchHit> vectorHits = vectorRecallDetailed(kbId, query, vectorLimit);
+        List<RetrievalHit> hits = new ArrayList<>();
+        int limit = Math.min(finalTopN, vectorHits.size());
+        for (int i = 0; i < limit; i++) {
+            VectorSearchHit hit = vectorHits.get(i);
+            hits.add(RetrievalHit.builder()
+                    .chunkId(hit.getId())
+                    .docId(hit.getDocId())
+                    .content(hit.getContent())
+                    .rank(i + 1)
+                    .retrievalSource("vector")
+                    .vectorRank(i + 1)
+                    .vectorDistance(hit.getVectorDistance())
+                    .bm25Rank(null)
+                    .bm25Score(null)
+                    .finalTopK(true)
+                    .build());
+        }
+        return StructuredRetrievalResult.builder()
+                .kbId(kbId)
+                .query(query)
+                .topN(finalTopN)
+                .vectorK(vectorLimit)
+                .bm25K(0)
+                .hits(hits)
+                .build();
+    }
+
+    private List<VectorSearchHit> vectorRecallDetailed(String kbId, String query, int k) {
         String queryEmbedding = toPgVector(doEmbed(query));
-        List<ChunkBgeM3> chunks = chunkBgeM3Mapper.similaritySearch(kbId, queryEmbedding, k);
+        List<VectorSearchHit> chunks = chunkBgeM3Mapper.similaritySearchWithDistance(kbId, queryEmbedding, k);
         return chunks != null ? chunks : Collections.emptyList();
     }
 
-    private List<String> rrfFuse(List<ChunkBgeM3> vectorHits,
+    private List<String> rrfFuse(List<VectorSearchHit> vectorHits,
                                  List<InvertedIndex.ScoredDoc> bm25Hits,
                                  int topN) {
         List<String> vectorIds = vectorHits.stream()
-                .map(ChunkBgeM3::getId)
+                .map(VectorSearchHit::getId)
                 .filter(Objects::nonNull)
                 .toList();
         List<String> bm25Ids = bm25Hits.stream()
@@ -162,22 +211,39 @@ public class RagServiceImpl implements RagService {
         return RRFFusion.fuse(hybridProperties.getRrfK(), topN, List.of(vectorIds, bm25Ids));
     }
 
-    private List<String> resolveContents(List<String> ids, List<ChunkBgeM3> vectorHits) {
-        Map<String, String> byId = new LinkedHashMap<>();
-        for (ChunkBgeM3 c : vectorHits) {
-            if (c.getId() != null) byId.put(c.getId(), c.getContent());
+    private List<RetrievalHit> mergeHybridHits(List<String> ids,
+                                               List<VectorSearchHit> vectorHits,
+                                               List<InvertedIndex.ScoredDoc> bm25Hits) {
+        Map<String, String> contentById = new LinkedHashMap<>();
+        Map<String, String> docIdById = new HashMap<>();
+        Map<String, Integer> vectorRankById = new HashMap<>();
+        Map<String, Double> vectorDistanceById = new HashMap<>();
+        for (int i = 0; i < vectorHits.size(); i++) {
+            VectorSearchHit hit = vectorHits.get(i);
+            if (hit.getId() == null) {
+                continue;
+            }
+            contentById.put(hit.getId(), hit.getContent());
+            docIdById.put(hit.getId(), hit.getDocId());
+            vectorRankById.put(hit.getId(), i + 1);
+            vectorDistanceById.put(hit.getId(), hit.getVectorDistance());
         }
 
         List<String> missing = new ArrayList<>();
         for (String id : ids) {
-            if (!byId.containsKey(id)) missing.add(id);
+            if (!contentById.containsKey(id)) {
+                missing.add(id);
+            }
         }
         if (!missing.isEmpty()) {
             try {
                 List<ChunkBgeM3> fetched = chunkBgeM3Mapper.selectByIds(missing);
                 if (fetched != null) {
                     for (ChunkBgeM3 c : fetched) {
-                        if (c.getId() != null) byId.put(c.getId(), c.getContent());
+                        if (c.getId() != null) {
+                            contentById.put(c.getId(), c.getContent());
+                            docIdById.put(c.getId(), c.getDocId());
+                        }
                     }
                 }
             } catch (Exception e) {
@@ -185,12 +251,53 @@ public class RagServiceImpl implements RagService {
             }
         }
 
-        List<String> out = new ArrayList<>(ids.size());
+        Map<String, Integer> bm25RankById = new HashMap<>();
+        Map<String, Double> bm25ScoreById = new HashMap<>();
+        for (int i = 0; i < bm25Hits.size(); i++) {
+            InvertedIndex.ScoredDoc hit = bm25Hits.get(i);
+            if (hit.getDocId() == null) {
+                continue;
+            }
+            bm25RankById.put(hit.getDocId(), i + 1);
+            bm25ScoreById.put(hit.getDocId(), hit.getScore());
+        }
+
+        List<RetrievalHit> out = new ArrayList<>(ids.size());
+        int rank = 1;
         for (String id : ids) {
-            String content = byId.get(id);
-            if (content != null) out.add(content);
+            String content = contentById.get(id);
+            if (content == null) {
+                continue;
+            }
+            Integer vectorRank = vectorRankById.get(id);
+            Integer bm25Rank = bm25RankById.get(id);
+            out.add(RetrievalHit.builder()
+                    .chunkId(id)
+                    .docId(docIdById.get(id))
+                    .content(content)
+                    .rank(rank++)
+                    .retrievalSource(resolveRetrievalSource(vectorRank, bm25Rank))
+                    .vectorRank(vectorRank)
+                    .vectorDistance(vectorDistanceById.get(id))
+                    .bm25Rank(bm25Rank)
+                    .bm25Score(bm25ScoreById.get(id))
+                    .finalTopK(true)
+                    .build());
         }
         return out;
+    }
+
+    private String resolveRetrievalSource(Integer vectorRank, Integer bm25Rank) {
+        if (vectorRank != null && bm25Rank != null) {
+            return "rrf(vector+bm25)";
+        }
+        if (vectorRank != null) {
+            return "rrf(vector)";
+        }
+        if (bm25Rank != null) {
+            return "rrf(bm25)";
+        }
+        return "rrf";
     }
 
     private String toPgVector(float[] v) {

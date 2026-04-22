@@ -15,6 +15,15 @@
         <result property="updatedAt" column="updated_at" jdbcType="TIMESTAMP"/>
     </resultMap>
 
+    <resultMap id="VectorSearchHitResultMap" type="com.kama.jchatmind.evaluation.model.VectorSearchHit">
+        <id property="id" column="id" jdbcType="VARCHAR"/>
+        <result property="kbId" column="kb_id" jdbcType="VARCHAR"/>
+        <result property="docId" column="doc_id" jdbcType="VARCHAR"/>
+        <result property="content" column="content" jdbcType="VARCHAR"/>
+        <result property="metadata" column="metadata" jdbcType="VARCHAR"/>
+        <result property="vectorDistance" column="vector_distance" jdbcType="DOUBLE"/>
+    </resultMap>
+
     <sql id="Base_Column_List">
         id,kb_id,doc_id,
         content,metadata,embedding,
@@ -98,6 +107,21 @@
                embedding,
                created_at,
                updated_at
+        FROM chunk_bge_m3
+        WHERE kb_id = CAST(#{kbId} AS uuid)
+        ORDER BY embedding <-> #{vectorLiteral}::vector
+        LIMIT #{limit}
+        ]]>
+    </select>
+
+    <select id="similaritySearchWithDistance" resultMap="VectorSearchHitResultMap">
+        <![CDATA[
+        SELECT id,
+               kb_id,
+               doc_id,
+               content,
+               metadata,
+               (embedding <-> #{vectorLiteral}::vector) AS vector_distance
         FROM chunk_bge_m3
         WHERE kb_id = CAST(#{kbId} AS uuid)
         ORDER BY embedding <-> #{vectorLiteral}::vector

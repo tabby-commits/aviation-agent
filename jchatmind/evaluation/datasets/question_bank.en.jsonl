@@ -1,0 +1,20 @@
+{"sample_id":"space_trends_001","user_input":"Analyze SpaceX satellite launch trends in 2025 based on recent aerospace news.","topic":"launch_trends","difficulty":"hard"}
+{"sample_id":"space_trends_002","user_input":"What signals in recent SpaceX launch coverage suggest changes in launch cadence?","topic":"launch_trends","difficulty":"medium"}
+{"sample_id":"space_trends_003","user_input":"How are Florida launch pads being used differently in recent SpaceX missions?","topic":"launch_infrastructure","difficulty":"medium"}
+{"sample_id":"space_trends_004","user_input":"What operational patterns can be observed in reusable booster landings from recent launch reports?","topic":"reusability","difficulty":"medium"}
+{"sample_id":"space_trends_005","user_input":"How is the balance between crewed missions and satellite deployment missions changing in recent reporting?","topic":"mission_mix","difficulty":"hard"}
+{"sample_id":"space_trends_006","user_input":"What do recent articles suggest about congestion or capacity pressure at U.S. launch sites?","topic":"launch_infrastructure","difficulty":"hard"}
+{"sample_id":"space_trends_007","user_input":"How are launch pad upgrades or modifications affecting operational flexibility in recent missions?","topic":"launch_infrastructure","difficulty":"medium"}
+{"sample_id":"space_trends_008","user_input":"What trends are emerging around Falcon 9 versus Falcon Heavy mission positioning?","topic":"vehicle_strategy","difficulty":"hard"}
+{"sample_id":"space_trends_009","user_input":"How are recent aerospace articles describing the role of rideshare missions in satellite deployment strategy?","topic":"satellite_deployment","difficulty":"medium"}
+{"sample_id":"space_trends_010","user_input":"What patterns can be inferred about ISS traffic management from recent crew and cargo mission news?","topic":"iss_operations","difficulty":"hard"}
+{"sample_id":"space_trends_011","user_input":"How are recent reports framing mission-duration expectations for ISS crew rotations?","topic":"iss_operations","difficulty":"medium"}
+{"sample_id":"space_trends_012","user_input":"What do recent launch reports indicate about how launch and landing operations are being co-located?","topic":"reusability","difficulty":"medium"}
+{"sample_id":"space_trends_013","user_input":"How is recent aerospace reporting describing commercial launch market competition in the United States?","topic":"market_competition","difficulty":"hard"}
+{"sample_id":"space_trends_014","user_input":"What evidence from recent news suggests increasing demand for rapid launch turnaround?","topic":"launch_trends","difficulty":"medium"}
+{"sample_id":"space_trends_015","user_input":"How are recent reports describing infrastructure decisions driven by future Starship operations?","topic":"starship_impact","difficulty":"hard"}
+{"sample_id":"space_trends_016","user_input":"What recent signals suggest that military or government priorities are shaping launch infrastructure usage?","topic":"policy_and_infrastructure","difficulty":"hard"}
+{"sample_id":"space_trends_017","user_input":"How are recent aerospace articles characterizing delay risk and schedule pressure across launch campaigns?","topic":"schedule_risk","difficulty":"hard"}
+{"sample_id":"space_trends_018","user_input":"What do recent reports suggest about the relationship between launch-site maintenance and mission planning?","topic":"launch_infrastructure","difficulty":"medium"}
+{"sample_id":"space_trends_019","user_input":"How are recent SpaceX mission reports describing coordination between crew safety requirements and pad availability?","topic":"crew_operations","difficulty":"hard"}
+{"sample_id":"space_trends_020","user_input":"What long-term operational trends can be inferred from recent aerospace news about launch-site specialization?","topic":"vehicle_strategy","difficulty":"hard"}

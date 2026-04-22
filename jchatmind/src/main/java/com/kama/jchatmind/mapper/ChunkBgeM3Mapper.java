@@ -1,5 +1,6 @@
 package com.kama.jchatmind.mapper;
 
+import com.kama.jchatmind.evaluation.model.VectorSearchHit;
 import com.kama.jchatmind.model.entity.ChunkBgeM3;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -25,6 +26,12 @@ public interface ChunkBgeM3Mapper {
     int countByKbId(@Param("kbId") String kbId);
 
     List<ChunkBgeM3> similaritySearch(
+            @Param("kbId") String kbId,
+            @Param("vectorLiteral") String vectorLiteral,
+            @Param("limit") int limit
+    );
+
+    List<VectorSearchHit> similaritySearchWithDistance(
             @Param("kbId") String kbId,
             @Param("vectorLiteral") String vectorLiteral,
             @Param("limit") int limit
