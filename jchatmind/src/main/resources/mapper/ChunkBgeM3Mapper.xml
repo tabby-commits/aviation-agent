@@ -104,4 +104,37 @@
         LIMIT #{limit}
         ]]>
     </select>
+
+    <select id="selectAllByKbIdLite" resultType="com.kama.jchatmind.model.entity.ChunkBgeM3">
+        SELECT id, kb_id AS kbId, doc_id AS docId, content
+        FROM chunk_bge_m3
+        WHERE kb_id = CAST(#{kbId} AS uuid)
+    </select>
+
+    <select id="selectByIds" resultMap="BaseResultMap">
+        SELECT id,
+               kb_id,
+               doc_id,
+               content,
+               metadata,
+               embedding,
+               created_at,
+               updated_at
+        FROM chunk_bge_m3
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            CAST(#{id} AS uuid)
+        </foreach>
+    </select>
+
+    <select id="selectChunkIdsByDocId" resultType="java.lang.String">
+        SELECT id
+        FROM chunk_bge_m3
+        WHERE doc_id = CAST(#{docId} AS uuid)
+    </select>
+
+    <delete id="deleteByDocId">
+        DELETE FROM chunk_bge_m3
+        WHERE doc_id = CAST(#{docId} AS uuid)
+    </delete>
 </mapper>

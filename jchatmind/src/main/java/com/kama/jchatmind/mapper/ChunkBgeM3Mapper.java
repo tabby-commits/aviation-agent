@@ -29,4 +29,24 @@ public interface ChunkBgeM3Mapper {
             @Param("vectorLiteral") String vectorLiteral,
             @Param("limit") int limit
     );
+
+    /**
+     * 按 kbId 批量加载 chunk 的 id + content（不读取 embedding 列，用于构建 BM25 倒排）
+     */
+    List<ChunkBgeM3> selectAllByKbIdLite(@Param("kbId") String kbId);
+
+    /**
+     * 按多个 id 查询 chunk（用于 BM25 召回结果回填 content）
+     */
+    List<ChunkBgeM3> selectByIds(@Param("ids") List<String> ids);
+
+    /**
+     * 按文档 id 查询所有 chunk id（用于文档删除时同步维护 BM25 倒排）
+     */
+    List<String> selectChunkIdsByDocId(@Param("docId") String docId);
+
+    /**
+     * 按文档 id 删除所有 chunk
+     */
+    int deleteByDocId(@Param("docId") String docId);
 }

@@ -2,6 +2,8 @@ package com.kama.jchatmind.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.kama.jchatmind.converter.DocumentConverter;
+import com.kama.jchatmind.event.ChunkDeletedEvent;
+import com.kama.jchatmind.event.ChunkInsertedEvent;
 import com.kama.jchatmind.exception.BizException;
 import com.kama.jchatmind.mapper.DocumentMapper;
 import com.kama.jchatmind.message.SseMessage;
@@ -25,6 +27,7 @@ import com.kama.jchatmind.service.SseService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -35,6 +38,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -42,6 +46,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -55,8 +60,10 @@ public class DocumentFacadeServiceImpl implements DocumentFacadeService {
     private final ChunkBgeM3Mapper chunkBgeM3Mapper;
     private final SseService sseService;
     private final Executor docProcessExecutor;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final int PROGRESS_REPORT_INTERVAL = 50;
+    private static final int EMBED_BATCH_SIZE = 4;
     private static final int BATCH_TIMEOUT_MINUTES = 10;
 
     public DocumentFacadeServiceImpl(
@@ -67,7 +74,8 @@ public class DocumentFacadeServiceImpl implements DocumentFacadeService {
             RagService ragService,
             ChunkBgeM3Mapper chunkBgeM3Mapper,
             SseService sseService,
-            @Qualifier("docProcessExecutor") Executor docProcessExecutor) {
+            @Qualifier("docProcessExecutor") Executor docProcessExecutor,
+            ApplicationEventPublisher eventPublisher) {
         this.documentMapper = documentMapper;
         this.documentConverter = documentConverter;
         this.documentStorageService = documentStorageService;
@@ -76,6 +84,7 @@ public class DocumentFacadeServiceImpl implements DocumentFacadeService {
         this.chunkBgeM3Mapper = chunkBgeM3Mapper;
         this.sseService = sseService;
         this.docProcessExecutor = docProcessExecutor;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -435,15 +444,35 @@ public class DocumentFacadeServiceImpl implements DocumentFacadeService {
             // 即使文件删除失败，也继续删除数据库记录
         }
 
+        // 级联删除 chunk，保证 BM25 倒排与 DB 一致
+        List<String> chunkIds = Collections.emptyList();
+        try {
+            chunkIds = chunkBgeM3Mapper.selectChunkIdsByDocId(documentId);
+            if (chunkIds != null && !chunkIds.isEmpty()) {
+                chunkBgeM3Mapper.deleteByDocId(documentId);
+            }
+        } catch (Exception e) {
+            log.warn("删除文档关联 chunk 失败: documentId={}, error={}", documentId, e.getMessage());
+        }
+
         // 删除数据库记录
         int result = documentMapper.deleteById(documentId);
         if (result <= 0) {
             throw new BizException("删除文档失败");
         }
+
+        // 发布 chunk 删除事件，通知 BM25 倒排移除
+        if (chunkIds != null && !chunkIds.isEmpty()) {
+            try {
+                eventPublisher.publishEvent(new ChunkDeletedEvent(document.getKbId(), chunkIds));
+            } catch (Exception e) {
+                log.warn("发布 ChunkDeletedEvent 失败: documentId={}", documentId, e);
+            }
+        }
     }
 
     /**
-     * 处理 Markdown 文档，解析并生成 chunks
+     * 处理 Markdown 文档，解析并生成 chunks（批量向量化）
      */
     private void processMarkdownDocument(String kbId, String documentId, String filePath) {
         try {
@@ -455,49 +484,66 @@ public class DocumentFacadeServiceImpl implements DocumentFacadeService {
                 // 解析 Markdown 文件
                 List<MarkdownParserService.MarkdownSection> sections = markdownParserService.parseMarkdown(inputStream);
 
-                System.out.println(sections);
-
                 if (sections.isEmpty()) {
                     log.warn("Markdown 文档解析后没有找到任何章节: documentId={}", documentId);
                     return;
                 }
 
+                // 过滤出有效的 section（标题非空）
+                List<MarkdownParserService.MarkdownSection> validSections = sections.stream()
+                        .filter(s -> s.getTitle() != null && !s.getTitle().trim().isEmpty())
+                        .collect(Collectors.toList());
+
+                if (validSections.isEmpty()) {
+                    log.warn("Markdown 文档没有有效标题: documentId={}", documentId);
+                    return;
+                }
+
+                // 提取所有标题
+                List<String> titles = validSections.stream()
+                        .map(MarkdownParserService.MarkdownSection::getTitle)
+                        .collect(Collectors.toList());
+
+                // 批量向量化（按 EMBED_BATCH_SIZE 分批）
+                List<float[]> allEmbeddings = new ArrayList<>();
+                for (int i = 0; i < titles.size(); i += EMBED_BATCH_SIZE) {
+                    int end = Math.min(i + EMBED_BATCH_SIZE, titles.size());
+                    List<String> batch = titles.subList(i, end);
+                    List<float[]> batchEmbeddings = ragService.embedBatch(batch);
+                    allEmbeddings.addAll(batchEmbeddings);
+                }
+
+                // 创建 chunks 并插入数据库
                 LocalDateTime now = LocalDateTime.now();
                 int chunkCount = 0;
-
-                // 为每个章节生成 chunk
-                for (MarkdownParserService.MarkdownSection section : sections) {
-                    String title = section.getTitle();
+                for (int i = 0; i < validSections.size(); i++) {
+                    MarkdownParserService.MarkdownSection section = validSections.get(i);
                     String content = section.getContent();
 
-                    if (title == null || title.trim().isEmpty()) {
-                        continue;
-                    }
-
-                    // 对标题进行 embedding
-                    float[] embedding = ragService.embed(title);
-
-                    // 创建 ChunkBgeM3 实体
                     ChunkBgeM3 chunk = ChunkBgeM3.builder()
                             .kbId(kbId)
                             .docId(documentId)
                             .content(content != null ? content : "")
-                            .metadata(null) // 可以存储标题信息到 metadata
-                            .embedding(embedding)
+                            .metadata(null)
+                            .embedding(allEmbeddings.get(i))
                             .createdAt(now)
                             .updatedAt(now)
                             .build();
 
-                    // 插入数据库
                     int result = chunkBgeM3Mapper.insert(chunk);
-
                     if (result > 0) {
                         chunkCount++;
-                        log.debug("创建 chunk 成功: title={}, chunkId={}", title, chunk.getId());
+                        log.debug("创建 chunk 成功: title={}, chunkId={}", section.getTitle(), chunk.getId());
+                        try {
+                            eventPublisher.publishEvent(new ChunkInsertedEvent(kbId, chunk.getId(), chunk.getContent()));
+                        } catch (Exception ex) {
+                            log.warn("发布 ChunkInsertedEvent 失败: chunkId={}", chunk.getId(), ex);
+                        }
                     } else {
-                        log.warn("创建 chunk 失败: title={}", title);
+                        log.warn("创建 chunk 失败: title={}", section.getTitle());
                     }
                 }
+
                 log.info("Markdown 文档处理完成: documentId={}, 共生成 {} 个 chunks", documentId, chunkCount);
             }
         } catch (Exception e) {

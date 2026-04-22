@@ -40,3 +40,21 @@ mybatis:
 document:
   storage:
     base-path: ./data/documents
+
+jchatmind:
+  skill:
+    enabled: true
+    scan-directories:
+      - ./skills
+    type: OPTIONAL
+  rag:
+    hybrid:
+      enabled: true
+      vector-top-k: 20
+      bm25-top-k: 20
+      final-top-n: 3
+      rrf-k: 60
+      warmup-on-startup: false
+      bm25:
+        k1: 1.2
+        b: 0.75
