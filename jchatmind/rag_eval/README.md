@@ -1,6 +1,6 @@
 # RAG Retrieval Evaluation
 
-This directory contains the offline retrieval-evaluation workflow for the aerospace-news knowledge base.
+This directory (`rag_eval/`) holds the offline retrieval-evaluation workflow for the aerospace-news knowledge base, separate from the Java package `com.kama.jchatmind.evaluation`.
 
 ## Workflow
 
@@ -57,10 +57,10 @@ Invoke-RestMethod `
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\activate
-pip install -r .\evaluation\requirements.txt
+pip install -r .\rag_eval\requirements.txt
 ```
 
-Create `evaluation/.env` from `evaluation/.env.example` before running scripts that call an OpenAI-compatible model.
+Create `rag_eval/.env` from `rag_eval/.env.example` before running scripts that call an OpenAI-compatible model.
 
 ## Notes
 

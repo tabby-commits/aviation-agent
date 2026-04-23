@@ -65,7 +65,7 @@ def load_environment(env_path: Path) -> None:
 def make_client() -> OpenAI:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is required. Create evaluation/.env from .env.example first.")
+        raise RuntimeError("OPENAI_API_KEY is required. Create rag_eval/.env from .env.example first.")
 
     base_url = os.getenv("OPENAI_BASE_URL")
     if base_url:

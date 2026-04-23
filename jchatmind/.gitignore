@@ -35,9 +35,9 @@ build/
 # Local runtime and uploaded/test data
 data/
 
-# Evaluation outputs and local secrets
-evaluation/artifacts/*
-!evaluation/artifacts/.gitkeep
-evaluation/reports/*
-!evaluation/reports/.gitkeep
-evaluation/.env
+# RAG offline eval workspace outputs and local secrets
+rag_eval/artifacts/*
+!rag_eval/artifacts/.gitkeep
+rag_eval/reports/*
+!rag_eval/reports/.gitkeep
+rag_eval/.env

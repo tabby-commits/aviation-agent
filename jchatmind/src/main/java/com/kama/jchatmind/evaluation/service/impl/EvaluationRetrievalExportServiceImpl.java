@@ -40,7 +40,7 @@ public class EvaluationRetrievalExportServiceImpl implements EvaluationRetrieval
             StructuredRetrievalService structuredRetrievalService,
             ChunkBgeM3Mapper chunkBgeM3Mapper,
             ObjectMapper objectMapper,
-            @Value("${evaluation.base-path:./evaluation}") String evaluationBasePath) {
+            @Value("${evaluation.base-path:./rag_eval}") String evaluationBasePath) {
         this.structuredRetrievalService = structuredRetrievalService;
         this.chunkBgeM3Mapper = chunkBgeM3Mapper;
         this.objectMapper = objectMapper;
