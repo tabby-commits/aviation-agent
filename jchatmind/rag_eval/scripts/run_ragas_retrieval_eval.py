@@ -190,9 +190,9 @@ def make_evaluator_llm(model: str, temperature: float) -> LangchainLLMWrapper:
 
 
 def main() -> int:
-    args = parse_args()
     evaluation_dir = Path(__file__).resolve().parent.parent
     load_environment(evaluation_dir / ".env")
+    args = parse_args()
 
     input_path = Path(args.input).resolve()
     ks = parse_ks(args.ks)
