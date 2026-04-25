@@ -104,7 +104,8 @@ public class RagServiceImpl implements RagService, StructuredRetrievalService {
 
     @Override
     public StructuredRetrievalResult retrieve(String kbId, String query, int topN) {
-        int finalTopN = topN > 0 ? topN : hybridProperties.getFinalTopN();
+        int requestedTopN = topN > 0 ? topN : hybridProperties.getFinalTopN();
+        int finalTopN = Math.min(requestedTopN, hybridProperties.getMaxTopN());
 
         if (!hybridProperties.isEnabled()) {
             return buildVectorOnlyResult(kbId, query, 3, finalTopN);

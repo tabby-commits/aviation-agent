@@ -1,6 +1,7 @@
 package com.kama.jchatmind.agent;
 
 import com.kama.jchatmind.converter.ChatMessageConverter;
+import com.kama.jchatmind.agent.search.AgenticSearchContext;
 import com.kama.jchatmind.message.SseMessage;
 import com.kama.jchatmind.model.dto.ChatMessageDTO;
 import com.kama.jchatmind.model.dto.KnowledgeBaseDTO;
@@ -64,7 +65,7 @@ public class JChatMind {
     private String chatSessionId;
 
     // 最多循环次数
-    private static final Integer MAX_STEPS = 20;
+    private static final Integer DEFAULT_MAX_STEPS = 20;
 
     private static final Integer DEFAULT_MAX_MESSAGES = 20;
 
@@ -77,6 +78,16 @@ public class JChatMind {
     private ChatMessageConverter chatMessageConverter;
 
     private ChatMessageFacadeService chatMessageFacadeService;
+
+    private String model;
+
+    private AgentRole role = AgentRole.MAIN;
+
+    private boolean persistMessages = true;
+
+    private boolean emitSse = true;
+
+    private int maxSteps = DEFAULT_MAX_STEPS;
 
     // 最后一次的 ChatResponse
     private ChatResponse lastChatResponse;
@@ -101,10 +112,35 @@ public class JChatMind {
                      ChatMessageFacadeService chatMessageFacadeService,
                      ChatMessageConverter chatMessageConverter
     ) {
+        this(agentId, name, description, systemPrompt, null, chatClient, maxMessages, memory, availableTools,
+                availableKbs, chatSessionId, sseService, chatMessageFacadeService, chatMessageConverter,
+                AgentRole.MAIN, true, true, DEFAULT_MAX_STEPS);
+    }
+
+    public JChatMind(String agentId,
+                     String name,
+                     String description,
+                     String systemPrompt,
+                     String model,
+                     ChatClient chatClient,
+                     Integer maxMessages,
+                     List<Message> memory,
+                     List<ToolCallback> availableTools,
+                     List<KnowledgeBaseDTO> availableKbs,
+                     String chatSessionId,
+                     SseService sseService,
+                     ChatMessageFacadeService chatMessageFacadeService,
+                     ChatMessageConverter chatMessageConverter,
+                     AgentRole role,
+                     boolean persistMessages,
+                     boolean emitSse,
+                     Integer maxSteps
+    ) {
         this.agentId = agentId;
         this.name = name;
         this.description = description;
         this.systemPrompt = systemPrompt;
+        this.model = model;
 
         this.chatClient = chatClient;
 
@@ -116,6 +152,10 @@ public class JChatMind {
 
         this.chatMessageFacadeService = chatMessageFacadeService;
         this.chatMessageConverter = chatMessageConverter;
+        this.role = role == null ? AgentRole.MAIN : role;
+        this.persistMessages = persistMessages;
+        this.emitSse = emitSse;
+        this.maxSteps = maxSteps == null ? DEFAULT_MAX_STEPS : maxSteps;
 
         this.agentState = AgentState.IDLE;
 
@@ -167,6 +207,9 @@ public class JChatMind {
     // SystemMessage 不需要持久化
     // UserMessage 在每次用户发送问题之间就已经持久化过了
     private void saveMessage(Message message) {
+        if (!persistMessages) {
+            return;
+        }
         ChatMessageDTO.ChatMessageDTOBuilder builder = ChatMessageDTO.builder();
         if (message instanceof AssistantMessage assistantMessage) {
             ChatMessageDTO chatMessageDTO = builder.role(ChatMessageDTO.RoleType.ASSISTANT)
@@ -200,6 +243,10 @@ public class JChatMind {
 
     // 刷新 pendingMessages, 将数据通过 sse 发送给前端
     private void refreshPendingMessages() {
+        if (!emitSse) {
+            pendingChatMessages.clear();
+            return;
+        }
         for (ChatMessageDTO message : pendingChatMessages) {
             ChatMessageVO vo = chatMessageConverter.toVO(message);
             SseMessage sseMessage = SseMessage.builder()
@@ -275,7 +322,13 @@ public class JChatMind {
                 .chatOptions(this.chatOptions)
                 .build();
 
-        ToolExecutionResult toolExecutionResult = toolCallingManager.executeToolCalls(prompt, this.lastChatResponse);
+        ToolExecutionResult toolExecutionResult;
+        try {
+            AgenticSearchContext.set(this.chatSessionId, this.model);
+            toolExecutionResult = toolCallingManager.executeToolCalls(prompt, this.lastChatResponse);
+        } finally {
+            AgenticSearchContext.clear();
+        }
 
         this.chatMemory.clear(this.chatSessionId);
         this.chatMemory.add(this.chatSessionId, toolExecutionResult.conversationHistory());
@@ -319,11 +372,11 @@ public class JChatMind {
         }
 
         try {
-            for (int i = 0; i < MAX_STEPS && agentState != AgentState.FINISHED; i++) {
+            for (int i = 0; i < maxSteps && agentState != AgentState.FINISHED; i++) {
                 // 当前步骤，用于实现 Agent Loop
                 int currentStep = i + 1;
                 step();
-                if (currentStep >= MAX_STEPS) {
+                if (currentStep >= maxSteps) {
                     agentState = AgentState.FINISHED;
                     log.warn("Max steps reached, stopping agent");
                 }
@@ -334,6 +387,18 @@ public class JChatMind {
             log.error("Error running agent", e);
             throw new RuntimeException("Error running agent", e);
         }
+    }
+
+    public String getLastAssistantText() {
+        if (lastChatResponse == null || lastChatResponse.getResult() == null) {
+            return null;
+        }
+        AssistantMessage output = lastChatResponse.getResult().getOutput();
+        return output == null ? null : output.getText();
+    }
+
+    public AgentRole getRole() {
+        return role;
     }
 
     @Override

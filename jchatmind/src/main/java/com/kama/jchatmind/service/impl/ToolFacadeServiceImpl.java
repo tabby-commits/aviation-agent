@@ -2,6 +2,7 @@ package com.kama.jchatmind.service.impl;
 
 import com.kama.jchatmind.agent.tools.Tool;
 import com.kama.jchatmind.agent.tools.ToolType;
+import com.kama.jchatmind.agent.tools.SubAgentOnlyTool;
 import com.kama.jchatmind.service.ToolFacadeService;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ public class ToolFacadeServiceImpl implements ToolFacadeService {
     private List<Tool> getToolsByType(ToolType type) {
         return tools.stream()
                 .filter(tool -> tool.getType().equals(type))
+                .filter(tool -> !(tool instanceof SubAgentOnlyTool))
                 .toList();
     }
 }

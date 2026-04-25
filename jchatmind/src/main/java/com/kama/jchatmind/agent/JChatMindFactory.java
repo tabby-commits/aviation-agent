@@ -169,7 +169,7 @@ public class JChatMindFactory {
         return runtimeTools;
     }
 
-    private List<ToolCallback> buildToolCallbacks(List<Tool> runtimeTools) {
+    public List<ToolCallback> buildToolCallbacksFromTools(List<Tool> runtimeTools) {
         List<ToolCallback> callbacks = new ArrayList<>();
         for (Tool tool : runtimeTools) {
             Object target = resolveToolTarget(tool);
@@ -193,22 +193,29 @@ public class JChatMindFactory {
         }
     }
 
+    public ChatClient resolveChatClient(String model) {
+        ChatClient chatClient = chatClientRegistry.get(model);
+        if (Objects.isNull(chatClient)) {
+            throw new IllegalStateException("未找到对应的 ChatClient: " + model);
+        }
+        return chatClient;
+    }
+
     private JChatMind buildAgentRuntime(
             Agent agent,
             List<Message> memory,
             List<KnowledgeBaseDTO> knowledgeBases,
             List<ToolCallback> toolCallbacks,
-            String chatSessionId
+            String chatSessionId,
+            String systemPrompt
     ) {
-        ChatClient chatClient = chatClientRegistry.get(agent.getModel());
-        if (Objects.isNull(chatClient)) {
-            throw new IllegalStateException("未找到对应的 ChatClient: " + agent.getModel());
-        }
+        ChatClient chatClient = resolveChatClient(agent.getModel());
         return new JChatMind(
                 agent.getId(),
                 agent.getName(),
                 agent.getDescription(),
-                agent.getSystemPrompt(),
+                systemPrompt,
+                agent.getModel(),
                 chatClient,
                 agentConfig.getChatOptions().getMessageLength(),
                 memory,
@@ -217,7 +224,11 @@ public class JChatMindFactory {
                 chatSessionId,
                 sseService,
                 chatMessageFacadeService,
-                chatMessageConverter
+                chatMessageConverter,
+                AgentRole.MAIN,
+                true,
+                true,
+                null
         );
     }
 
@@ -225,6 +236,10 @@ public class JChatMindFactory {
      * 创建一个 JChatMind 实例
      */
     public JChatMind create(String agentId, String chatSessionId) {
+        return create(agentId, chatSessionId, null);
+    }
+
+    public JChatMind create(String agentId, String chatSessionId, String extraSystemPrompt) {
         Agent agent = loadAgent(agentId);
         AgentDTO agentConfig = toAgentConfig(agent);
         List<Message> memory = loadMemory(chatSessionId);
@@ -234,14 +249,25 @@ public class JChatMindFactory {
         // 解析 agent 支持的工具调用
         List<Tool> runtimeTools = resolveRuntimeTools(agentConfig);
         // 将工具调用转换成 ToolCallback 的形式
-        List<ToolCallback> toolCallbacks = buildToolCallbacks(runtimeTools);
+        List<ToolCallback> toolCallbacks = buildToolCallbacksFromTools(runtimeTools);
 
         return buildAgentRuntime(
                 agent,
                 memory,
                 knowledgeBases,
                 toolCallbacks,
-                chatSessionId
+                chatSessionId,
+                appendSystemPrompt(agent.getSystemPrompt(), extraSystemPrompt)
         );
+    }
+
+    private String appendSystemPrompt(String systemPrompt, String extraSystemPrompt) {
+        if (!StringUtils.hasLength(extraSystemPrompt)) {
+            return systemPrompt;
+        }
+        if (!StringUtils.hasLength(systemPrompt)) {
+            return extraSystemPrompt;
+        }
+        return systemPrompt + "\n\n" + extraSystemPrompt;
     }
 }
