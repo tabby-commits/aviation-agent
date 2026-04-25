@@ -55,6 +55,36 @@ jchatmind:
       final-top-n: 3
       rrf-k: 60
       warmup-on-startup: false
+      max-top-n: 100          # 子 Agent 宽召回 topN 硬上限，防止过度拉取
       bm25:
         k1: 1.2
         b: 0.75
+  # ---- Agentic Search（PR1 占位，enabled=false 不影响现有功能）----
+  agentic-search:
+    enabled: false
+    router:
+      enabled: true
+      model: deepseek-chat    # 意图路由使用的模型，建议非 reasoning 快速模型
+      timeout-ms: 3000
+    delegation:
+      max-parallel: 4         # 单次委派最大并发子任务数
+      max-sub-steps-cap: 8    # 子 Agent MAX_STEPS 硬上限
+      default-timeout-seconds: 45
+      global-timeout-seconds: 60
+      per-user-max-parallel: 6
+    sub-agent:
+      kb-wide-top-k: 30       # SubAgentKnowledgeTool 默认 topK
+      kb-wide-top-k-max: 60
+    search:
+      default-count: 8
+      count-max: 15
+  # ---- Tavily Search Provider（PR1 占位，enabled=false）----
+  search:
+    tavily:
+      enabled: false
+      api-key: ${TAVILY_API_KEY:}
+      base-url: https://api.tavily.com
+      search-depth: basic     # basic | advanced
+      default-count: 8
+      timeout-ms: 8000
+      max-retries: 2

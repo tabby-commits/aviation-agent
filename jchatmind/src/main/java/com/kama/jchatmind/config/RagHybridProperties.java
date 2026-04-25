@@ -42,6 +42,12 @@ public class RagHybridProperties {
      */
     private boolean warmupOnStartup = false;
 
+    /**
+     * Hard upper limit for topN passed to hybridSearch().
+     * Prevents sub-agents from requesting unreasonably large result sets.
+     */
+    private int maxTopN = 100;
+
     private Bm25 bm25 = new Bm25();
 
     @Data

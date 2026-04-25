@@ -30,6 +30,12 @@ public class SseMessage {
         private Integer failCount;
         // 批量上传最终结果
         private BatchResultResponse batchResult;
+        // Agentic Search 阶段信息（AGENTIC_* 类型消息使用）
+        private String stage;
+        private Integer step;
+        private Integer totalSteps;
+        private String toolName;
+        private String taskId;
     }
 
     @Data
@@ -39,15 +45,8 @@ public class SseMessage {
         private String chatMessageId;
     }
 
-    // 自定义消息类型
-    // 1. AI 生成
-    // 2. AI 规划中
-    // 3. AI 思考中
-    // 4. AI 执行中
-    // 5. AI 完成
-    // 6. 批量上传进度
-    // 7. 批量上传完成
     public enum Type {
+        // 原有类型
         AI_GENERATED_CONTENT,
         AI_PLANNING,
         AI_THINKING,
@@ -55,5 +54,16 @@ public class SseMessage {
         AI_DONE,
         BATCH_PROGRESS,
         BATCH_COMPLETE,
+        // Agentic Search 阶段类型（前端未适配时未知 Type 自动忽略，向后兼容）
+        /** 意图路由完成，payload.stage 说明路由决策 */
+        AGENTIC_ROUTING,
+        /** 主 Agent 已调用 delegateSearchTask，开始分发子任务，payload.total 为子任务总数 */
+        AGENTIC_DELEGATING,
+        /** 某子任务执行进度更新，payload.taskId + payload.step + payload.totalSteps */
+        AGENTIC_SUBAGENT_PROGRESS,
+        /** 某子任务发生自动降级（如 web→kb），payload.taskId + payload.stage 说明降级原因 */
+        AGENTIC_FALLBACK,
+        /** 所有子任务执行完毕，聚合结果已返回主 Agent */
+        AGENTIC_DONE,
     }
 }
