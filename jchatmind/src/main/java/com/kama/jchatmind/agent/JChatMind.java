@@ -199,6 +199,14 @@ public class JChatMind {
         log.info("\n\n========== Tool Calling ==========\n{}\n=================================\n", logMessage);
     }
 
+    private String preview(String value) {
+        if (value == null) {
+            return "";
+        }
+        String singleLine = value.replace("\r", " ").replace("\n", " ");
+        return singleLine.length() > 500 ? singleLine.substring(0, 500) : singleLine;
+    }
+
     // 持久化 Message, 返回 chatMessageId
     // 需要 Agent 持久化的 Message 子类有以下两类
     // AssistantMessage
@@ -395,6 +403,31 @@ public class JChatMind {
         }
         AssistantMessage output = lastChatResponse.getResult().getOutput();
         return output == null ? null : output.getText();
+    }
+
+    public String getConversationTextForRepair() {
+        return this.chatMemory.get(this.chatSessionId)
+                .stream()
+                .map(message -> {
+                    if (message instanceof AssistantMessage assistantMessage) {
+                        return "assistant: " + assistantMessage.getText();
+                    }
+                    if (message instanceof UserMessage userMessage) {
+                        return "user: " + userMessage.getText();
+                    }
+                    if (message instanceof SystemMessage systemMessage) {
+                        return "system: " + systemMessage.getText();
+                    }
+                    if (message instanceof ToolResponseMessage toolResponseMessage) {
+                        String responses = toolResponseMessage.getResponses()
+                                .stream()
+                                .map(resp -> resp.name() + "=" + preview(resp.responseData()))
+                                .collect(Collectors.joining("; "));
+                        return "tool: " + responses;
+                    }
+                    return message.getMessageType() + ": " + message.getText();
+                })
+                .collect(Collectors.joining("\n"));
     }
 
     public AgentRole getRole() {

@@ -41,3 +41,6 @@ rag_eval/artifacts/*
 rag_eval/reports/*
 !rag_eval/reports/.gitkeep
 rag_eval/.env
+
+# Local API secrets (Tavily 等，勿提交)
+src/main/resources/application-local.yaml

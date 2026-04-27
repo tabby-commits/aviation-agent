@@ -35,7 +35,11 @@ public class SearchDelegationTool implements Tool {
 
     @org.springframework.ai.tool.annotation.Tool(
             name = "delegateSearchTask",
-            description = "派发并行子任务进行 Agentic Search。每个子任务可独立启用知识库宽召回和 Web 搜索，返回结构化摘要、关键发现、引用与 failures。"
+            description = """
+                    派发并行子任务进行 Agentic Search。每个子任务可独立启用知识库宽召回和 Web 搜索，返回结构化摘要、关键发现、引用与 failures。
+                    参数要求：tasks 是数组，policy 是对象。只有已经掌握真实知识库 ID 时，才可设置 allowKbSearch=true 且必须填写 kbId；
+                    如果没有明确 kbId，必须设置 allowKbSearch=false、kbId=null，并使用 allowWebSearch=true 执行 Web 检索。
+                    """
     )
     public DelegationResult delegate(List<SubTaskSpec> tasks, GlobalPolicy policy) {
         AgenticSearchContext.Context context = AgenticSearchContext.get();

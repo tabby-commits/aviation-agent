@@ -1,0 +1,8 @@
+# 复制为 application-local.yaml 后填入真实密钥。application-local.yaml 已加入 .gitignore。
+# 主配置已使用 spring.config.import: optional:classpath:application-local.yaml 自动合并。
+# 也可不建此文件，仅设置环境变量: TAVILY_API_KEY=...
+jchatmind:
+  search:
+    tavily:
+      enabled: true
+      api-key: "your-tavily-api-key"

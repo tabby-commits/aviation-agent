@@ -11,6 +11,7 @@ import com.kama.jchatmind.search.SearchService;
 import com.kama.jchatmind.service.SseService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -19,6 +20,7 @@ import java.util.concurrent.Executors;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SubAgentExecutionServiceTest {
@@ -60,6 +62,27 @@ class SubAgentExecutionServiceTest {
         assertThat(result.results()).isEmpty();
         assertThat(result.failures()).hasSize(1);
         assertThat(result.failures().get(0).errorCode()).isEqualTo("SEARCH_DELEGATION_INVALID_INPUT");
+    }
+
+    @Test
+    void blankKbIdWithWebSearchFallsBackToWebOnly() {
+        when(searchService.isAvailable()).thenReturn(true);
+        when(runtimeFactory.runSubAgent(any(), any(), any(), anyInt(), any()))
+                .thenAnswer(invocation -> ok(invocation.getArgument(0, SubTaskSpec.class).taskId()));
+        SubAgentExecutionService service = service();
+        SubTaskSpec task = new SubTaskSpec("web-task", "search task", "", null,
+                new SearchPolicy(true, true, 3, 5));
+
+        DelegationResult result = service.execute(List.of(task), new GlobalPolicy(1, 5), null, null);
+
+        assertThat(result.results()).extracting(SubTaskResult::taskId).containsExactly("web-task");
+        assertThat(result.failures()).isEmpty();
+        ArgumentCaptor<SubTaskSpec> specCaptor = ArgumentCaptor.forClass(SubTaskSpec.class);
+        verify(runtimeFactory).runSubAgent(specCaptor.capture(), any(), any(), anyInt(), any());
+        SubTaskSpec normalized = specCaptor.getValue();
+        assertThat(normalized.kbId()).isNull();
+        assertThat(normalized.searchPolicy().allowKbSearch()).isFalse();
+        assertThat(normalized.searchPolicy().allowWebSearch()).isTrue();
     }
 
     @Test

@@ -3,7 +3,6 @@ package com.kama.jchatmind.agent.search;
 import com.kama.jchatmind.agent.search.model.SearchPolicy;
 import com.kama.jchatmind.agent.search.model.SubTaskSpec;
 import com.kama.jchatmind.agent.tools.SubAgentKnowledgeTool;
-import com.kama.jchatmind.agent.tools.TerminateTool;
 import com.kama.jchatmind.agent.tools.Tool;
 import com.kama.jchatmind.agent.tools.WebSearchTool;
 import org.junit.jupiter.api.Test;
@@ -18,7 +17,7 @@ class SubAgentToolsetPolicyTest {
 
     private final SubAgentKnowledgeTool knowledgeTool = mock(SubAgentKnowledgeTool.class);
     private final WebSearchTool webSearchTool = mock(WebSearchTool.class);
-    private final SubAgentToolsetPolicy policy = new SubAgentToolsetPolicy(new TerminateTool(), knowledgeTool, webSearchTool);
+    private final SubAgentToolsetPolicy policy = new SubAgentToolsetPolicy(knowledgeTool, webSearchTool);
 
     @Test
     void kbOnly_containsKnowledgeAndNoWeb() {
@@ -26,8 +25,8 @@ class SubAgentToolsetPolicyTest {
         when(webSearchTool.getName()).thenReturn("webSearch");
         List<String> names = resolveNames(new SearchPolicy(true, false, 6, 45));
 
-        assertThat(names).contains("terminate", "directAnswer", "knowledgeWideQuery");
-        assertThat(names).doesNotContain("webSearch", "delegateSearchTask");
+        assertThat(names).contains("directAnswer", "knowledgeWideQuery");
+        assertThat(names).doesNotContain("terminate", "webSearch", "delegateSearchTask");
     }
 
     @Test
@@ -36,8 +35,8 @@ class SubAgentToolsetPolicyTest {
         when(webSearchTool.getName()).thenReturn("webSearch");
         List<String> names = resolveNames(new SearchPolicy(false, true, 6, 45));
 
-        assertThat(names).contains("terminate", "directAnswer", "webSearch");
-        assertThat(names).doesNotContain("knowledgeWideQuery", "delegateSearchTask");
+        assertThat(names).contains("directAnswer", "webSearch");
+        assertThat(names).doesNotContain("terminate", "knowledgeWideQuery", "delegateSearchTask");
     }
 
     @Test
@@ -46,8 +45,8 @@ class SubAgentToolsetPolicyTest {
         when(webSearchTool.getName()).thenReturn("webSearch");
         List<String> names = resolveNames(new SearchPolicy(true, true, 6, 45));
 
-        assertThat(names).contains("terminate", "directAnswer", "knowledgeWideQuery", "webSearch");
-        assertThat(names).doesNotContain("delegateSearchTask");
+        assertThat(names).contains("directAnswer", "knowledgeWideQuery", "webSearch");
+        assertThat(names).doesNotContain("terminate", "delegateSearchTask");
     }
 
     private List<String> resolveNames(SearchPolicy searchPolicy) {

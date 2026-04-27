@@ -115,8 +115,9 @@ public class SubAgentExecutionService {
 
     private TaskOutcome runOne(SubTaskSpec spec, String parentSessionId, String model) {
         try {
-            validate(spec);
-            FallbackDecision fallback = applyFallback(spec, parentSessionId);
+            SubTaskSpec normalizedSpec = normalize(spec);
+            validate(normalizedSpec);
+            FallbackDecision fallback = applyFallback(normalizedSpec, parentSessionId);
             emit(parentSessionId, SseMessage.Type.AGENTIC_SUBAGENT_PROGRESS, "running", 1, maxSteps(fallback.spec()), null, spec.taskId());
             SubTaskResult result = runtimeFactory.runSubAgent(
                     fallback.spec(),
@@ -133,6 +134,23 @@ public class SubAgentExecutionService {
         } finally {
             emit(parentSessionId, SseMessage.Type.AGENTIC_SUBAGENT_PROGRESS, "finished", 1, 1, null, spec.taskId());
         }
+    }
+
+    private SubTaskSpec normalize(SubTaskSpec spec) {
+        if (spec == null || spec.searchPolicy() == null) {
+            return spec;
+        }
+        SearchPolicy policy = spec.searchPolicy();
+        if (policy.allowKbSearch() && !StringUtils.hasText(spec.kbId()) && policy.allowWebSearch()) {
+            return new SubTaskSpec(
+                    spec.taskId(),
+                    spec.taskDescription(),
+                    null,
+                    spec.scope(),
+                    new SearchPolicy(false, true, policy.maxSubSteps(), policy.timeoutSeconds())
+            );
+        }
+        return spec;
     }
 
     private FallbackDecision applyFallback(SubTaskSpec spec, String parentSessionId) {

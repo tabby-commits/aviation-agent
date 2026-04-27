@@ -57,6 +57,8 @@ public class ChatEventListener {
                 【Agentic Search 路由提示】
                 本轮问题已被判定为需要 Agentic Search，原因：%s。
                 你应优先调用 delegateSearchTask，将问题拆成 1 到 N 个可并行检索的子任务。
+                如果没有明确可用的知识库 ID，不要启用知识库检索：将 kbId 设为 null，并将 searchPolicy.allowKbSearch 设为 false。
+                需要外部资料时使用 searchPolicy.allowWebSearch=true。
                 子任务失败时不要编造，应在最终回答中说明对应维度材料不足。
                 """.formatted(decision.reason());
     }

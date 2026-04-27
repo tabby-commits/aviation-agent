@@ -1,4 +1,7 @@
 spring:
+  config:
+    # 本机可放置 application-local.yaml（已加入 .gitignore），避免把 Tavily 等密钥提交到 Git；CI/无此文件时自动忽略
+    import: optional:classpath:application-local.yaml
   application:
     name: jchatmind
   datasource:
@@ -61,7 +64,7 @@ jchatmind:
         b: 0.75
   # ---- Agentic Search（PR1 占位，enabled=false 不影响现有功能）----
   agentic-search:
-    enabled: false
+    enabled: true
     router:
       enabled: true
       model: deepseek-chat    # 意图路由使用的模型，建议非 reasoning 快速模型
@@ -78,10 +81,10 @@ jchatmind:
     search:
       default-count: 8
       count-max: 15
-  # ---- Tavily Search Provider（PR1 占位，enabled=false）----
+  # ---- Tavily Search Provider；密钥优先 TAVILY_API_KEY 或 application-local.yaml ----
   search:
     tavily:
-      enabled: false
+      enabled: true
       api-key: ${TAVILY_API_KEY:}
       base-url: https://api.tavily.com
       search-depth: basic     # basic | advanced
