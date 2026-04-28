@@ -1,5 +1,6 @@
 package com.kama.jchatmind.message;
 
+import com.kama.jchatmind.model.chart.ChartArtifact;
 import com.kama.jchatmind.model.response.BatchResultResponse;
 import com.kama.jchatmind.model.vo.ChatMessageVO;
 import lombok.AllArgsConstructor;
@@ -36,6 +37,7 @@ public class SseMessage {
         private Integer totalSteps;
         private String toolName;
         private String taskId;
+        private ChartArtifact chart;
     }
 
     @Data
@@ -65,5 +67,6 @@ public class SseMessage {
         AGENTIC_FALLBACK,
         /** 所有子任务执行完毕，聚合结果已返回主 Agent */
         AGENTIC_DONE,
+        CHART_GENERATED,
     }
 }

@@ -1,6 +1,7 @@
 package com.kama.jchatmind.agent;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kama.jchatmind.agent.tools.Tool;
 import com.kama.jchatmind.config.ChatClientRegistry;
 import com.kama.jchatmind.converter.AgentConverter;
@@ -43,6 +44,7 @@ public class JChatMindFactory {
     private final ToolFacadeService toolFacadeService;
     private final ChatMessageFacadeService chatMessageFacadeService;
     private final ChatMessageConverter chatMessageConverter;
+    private final ObjectMapper objectMapper;
 
     // 运行时 Agent 配置
     private AgentDTO agentConfig;
@@ -56,7 +58,8 @@ public class JChatMindFactory {
             KnowledgeBaseConverter knowledgeBaseConverter,
             ToolFacadeService toolFacadeService,
             ChatMessageFacadeService chatMessageFacadeService,
-            ChatMessageConverter chatMessageConverter
+            ChatMessageConverter chatMessageConverter,
+            ObjectMapper objectMapper
     ) {
         this.chatClientRegistry = chatClientRegistry;
         this.sseService = sseService;
@@ -67,6 +70,7 @@ public class JChatMindFactory {
         this.toolFacadeService = toolFacadeService;
         this.chatMessageFacadeService = chatMessageFacadeService;
         this.chatMessageConverter = chatMessageConverter;
+        this.objectMapper = objectMapper;
     }
 
     private Agent loadAgent(String agentId) {
@@ -228,7 +232,8 @@ public class JChatMindFactory {
                 AgentRole.MAIN,
                 true,
                 true,
-                null
+                null,
+                objectMapper
         );
     }
 

@@ -89,7 +89,8 @@ public class SubAgentRuntimeFactory {
                 AgentRole.SUB,
                 false,
                 false,
-                maxSteps
+                maxSteps,
+                objectMapper
         );
     }
 

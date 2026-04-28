@@ -1,8 +1,11 @@
 package com.kama.jchatmind.agent;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kama.jchatmind.converter.ChatMessageConverter;
 import com.kama.jchatmind.agent.search.AgenticSearchContext;
+import com.kama.jchatmind.agent.tools.ChartTools;
 import com.kama.jchatmind.message.SseMessage;
+import com.kama.jchatmind.model.chart.ChartArtifact;
 import com.kama.jchatmind.model.dto.ChatMessageDTO;
 import com.kama.jchatmind.model.dto.KnowledgeBaseDTO;
 import com.kama.jchatmind.model.response.CreateChatMessageResponse;
@@ -79,6 +82,8 @@ public class JChatMind {
 
     private ChatMessageFacadeService chatMessageFacadeService;
 
+    private ObjectMapper objectMapper;
+
     private String model;
 
     private AgentRole role = AgentRole.MAIN;
@@ -114,7 +119,7 @@ public class JChatMind {
     ) {
         this(agentId, name, description, systemPrompt, null, chatClient, maxMessages, memory, availableTools,
                 availableKbs, chatSessionId, sseService, chatMessageFacadeService, chatMessageConverter,
-                AgentRole.MAIN, true, true, DEFAULT_MAX_STEPS);
+                AgentRole.MAIN, true, true, DEFAULT_MAX_STEPS, null);
     }
 
     public JChatMind(String agentId,
@@ -136,6 +141,31 @@ public class JChatMind {
                      boolean emitSse,
                      Integer maxSteps
     ) {
+        this(agentId, name, description, systemPrompt, model, chatClient, maxMessages, memory, availableTools,
+                availableKbs, chatSessionId, sseService, chatMessageFacadeService, chatMessageConverter,
+                role, persistMessages, emitSse, maxSteps, null);
+    }
+
+    public JChatMind(String agentId,
+                     String name,
+                     String description,
+                     String systemPrompt,
+                     String model,
+                     ChatClient chatClient,
+                     Integer maxMessages,
+                     List<Message> memory,
+                     List<ToolCallback> availableTools,
+                     List<KnowledgeBaseDTO> availableKbs,
+                     String chatSessionId,
+                     SseService sseService,
+                     ChatMessageFacadeService chatMessageFacadeService,
+                     ChatMessageConverter chatMessageConverter,
+                     AgentRole role,
+                     boolean persistMessages,
+                     boolean emitSse,
+                     Integer maxSteps,
+                     ObjectMapper objectMapper
+    ) {
         this.agentId = agentId;
         this.name = name;
         this.description = description;
@@ -152,6 +182,7 @@ public class JChatMind {
 
         this.chatMessageFacadeService = chatMessageFacadeService;
         this.chatMessageConverter = chatMessageConverter;
+        this.objectMapper = objectMapper;
         this.role = role == null ? AgentRole.MAIN : role;
         this.persistMessages = persistMessages;
         this.emitSse = emitSse;
@@ -238,6 +269,7 @@ public class JChatMind {
                         .sessionId(this.chatSessionId)
                         .metadata(ChatMessageDTO.MetaData.builder()
                                 .toolResponse(toolResponse)
+                                .chartArtifacts(extractChartArtifacts(toolResponse))
                                 .build())
                         .build();
                 CreateChatMessageResponse chatMessage = chatMessageFacadeService.createChatMessage(chatMessageDTO);
@@ -250,6 +282,22 @@ public class JChatMind {
     }
 
     // 刷新 pendingMessages, 将数据通过 sse 发送给前端
+    private List<ChartArtifact> extractChartArtifacts(ToolResponseMessage.ToolResponse toolResponse) {
+        if (objectMapper == null || toolResponse == null || !ChartTools.TOOL_NAME.equals(toolResponse.name())) {
+            return null;
+        }
+        try {
+            ChartArtifact artifact = objectMapper.readValue(toolResponse.responseData(), ChartArtifact.class);
+            if (artifact.getId() == null || artifact.getEchartsOption() == null) {
+                return null;
+            }
+            return List.of(artifact);
+        } catch (Exception e) {
+            log.warn("Failed to parse chart artifact from tool response: {}", e.getMessage());
+            return null;
+        }
+    }
+
     private void refreshPendingMessages() {
         if (!emitSse) {
             pendingChatMessages.clear();
