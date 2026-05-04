@@ -96,7 +96,7 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
               className="cursor-pointer transition-all hover:shadow-lg"
             >
               <Space size="middle">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-brand-surface-soft to-brand-secondary flex items-center justify-center">
                   <RobotOutlined className="text-white text-xl" />
                 </div>
                 <div>
@@ -115,7 +115,7 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
               className="cursor-pointer transition-all hover:shadow-lg"
             >
               <Space size="middle">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-teal-400 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-brand-secondary to-brand-primary flex items-center justify-center">
                   <BulbOutlined className="text-white text-xl" />
                 </div>
                 <div>
@@ -134,7 +134,7 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
               className="cursor-pointer transition-all hover:shadow-lg"
             >
               <Space size="middle">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-400 to-red-400 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-brand-primary to-brand-deep flex items-center justify-center">
                   <MessageOutlined className="text-white text-xl" />
                 </div>
                 <div>

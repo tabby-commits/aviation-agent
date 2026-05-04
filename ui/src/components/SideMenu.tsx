@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { RobotOutlined } from "@ant-design/icons";
+import { RocketOutlined } from "@ant-design/icons";
 import { Tabs, type TabsProps } from "antd";
 import { useNavigate } from "react-router-dom";
 import AgentTabContent from "./tabs/AgentTabContent.tsx";
@@ -91,11 +91,14 @@ const SideMenu: React.FC<SideMenuProps> = () => {
 
   return (
     <div className="px-4 flex flex-col h-full">
-      <div className="h-14 w-full flex items-center border-b border-gray-200">
-        <div className="flex items-center gap-2.5 mx-4">
-          <RobotOutlined className="text-xl text-indigo-600" />
-          <div className="text-lg font-semibold select-none text-gray-900">
-            JChatMind
+      <div className="min-h-14 w-full flex items-center border-b border-gray-200 py-1.5">
+        <div className="flex items-start gap-2.5 mx-4">
+          <RocketOutlined className="text-xl text-brand-icon shrink-0 mt-0.5" />
+          <div
+            className="text-sm font-semibold select-none text-gray-900 leading-tight line-clamp-2"
+            title="航天科技情报分析智能体"
+          >
+            航天科技情报分析智能体
           </div>
         </div>
       </div>

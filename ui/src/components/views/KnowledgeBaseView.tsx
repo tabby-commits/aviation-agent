@@ -125,7 +125,7 @@ const KnowledgeBaseView: React.FC = () => {
     return (
       <div className="flex flex-col h-full items-center justify-center p-6">
         <Empty
-          image={<BookOutlined className="text-6xl text-gray-300" />}
+          image={<BookOutlined className="text-6xl text-brand-icon opacity-80" />}
           description={
             <div className="mt-4">
               <Title level={4} type="secondary">
@@ -168,8 +168,8 @@ const KnowledgeBaseView: React.FC = () => {
         <div className="mb-3">
           <Card>
             <div className="flex items-start gap-4">
-              <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-blue-200 to-purple-200 flex items-center justify-center text-3xl shrink-0">
-                <BookOutlined />
+              <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-brand-surface-soft to-brand-secondary flex items-center justify-center shrink-0 text-3xl text-white">
+                <BookOutlined className="text-white text-3xl" />
               </div>
               <div className="flex-1">
                 <Title level={3} className="mb-2">

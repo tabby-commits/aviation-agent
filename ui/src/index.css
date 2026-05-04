@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+@theme {
+  --color-brand-primary: #1b3a5f;
+  /** 略亮于 primary，用于侧栏/工具条等线框图标 */
+  --color-brand-icon: #3d7ec8;
+  --color-brand-deep: #0f2744;
+  --color-brand-secondary: #2c5282;
+  --color-brand-surface-soft: #dce6f0;
+  --color-brand-surface-muted: #e8eef5;
+  --color-brand-border: #4a6fa5;
+  --color-sidebar: #f0f4f8;
+  --color-surface-muted: #eef2f6;
+}
+
 /* 修复 Ant Design Tabs 在 flex 布局中的滚动问题 */
 .ant-tabs {
   display: flex;

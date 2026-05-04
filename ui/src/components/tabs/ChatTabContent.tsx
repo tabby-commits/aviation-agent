@@ -47,7 +47,7 @@ const ChatTabContent: React.FC = () => {
   return (
     <div className="flex flex-col h-full">
       <Button
-        color="geekblue"
+        type="primary"
         variant="filled"
         icon={<PlusOutlined />}
         onClick={handleCreateNewChat}
@@ -56,14 +56,14 @@ const ChatTabContent: React.FC = () => {
         新聊天
       </Button>
       <Divider />
-      <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50 rounded-lg">
+      <div className="flex-1 min-h-0 overflow-y-auto bg-surface-muted rounded-lg">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
             <p className="text-sm">加载中...</p>
           </div>
         ) : chatSessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
-            <MessageOutlined className="text-4xl mb-2" />
+            <MessageOutlined className="text-4xl mb-2 text-brand-icon" />
             <p className="text-sm">暂无聊天记录</p>
             <p className="text-xs mt-1">点击上方按钮创建新聊天</p>
           </div>
@@ -76,8 +76,8 @@ const ChatTabContent: React.FC = () => {
                 className="w-full px-3 py-2.5 rounded-lg bg-white cursor-pointer transition-all hover:bg-gray-100 hover:shadow-sm group relative"
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-200 to-purple-200 flex items-center justify-center shrink-0 text-lg mt-0.5">
-                    <MessageOutlined />
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-surface-soft to-brand-secondary flex items-center justify-center shrink-0 text-lg mt-0.5 text-white">
+                    <MessageOutlined className="text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-gray-900 truncate">

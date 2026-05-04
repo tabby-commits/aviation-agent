@@ -77,7 +77,7 @@ const AgentTabContent: React.FC<AgentTabContentProps> = ({
   return (
     <div className="flex flex-col h-full">
       <Button
-        color="geekblue"
+        type="primary"
         variant="filled"
         icon={<PlusOutlined />}
         onClick={onCreateAgentClick}
@@ -86,7 +86,7 @@ const AgentTabContent: React.FC<AgentTabContentProps> = ({
         智能体助手
       </Button>
       <Divider />
-      <div className="flex-1 overflow-y-auto bg-gray-50 rounded-lg p-1.5">
+      <div className="flex-1 overflow-y-auto bg-surface-muted rounded-lg p-1.5">
         {agents.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
             <p className="text-sm">暂无智能体</p>
@@ -104,7 +104,7 @@ const AgentTabContent: React.FC<AgentTabContentProps> = ({
                   className="w-full px-3 py-3 rounded-lg bg-white cursor-pointer transition-all hover:bg-gray-100 hover:shadow-sm group relative"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-yellow-200 to-orange-200 flex items-center justify-center shrink-0 text-lg mt-0.5">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-surface-soft to-brand-secondary flex items-center justify-center shrink-0 text-lg mt-0.5 text-white">
                       {agent.emoji}
                     </div>
                     <div className="flex-1 min-w-0">

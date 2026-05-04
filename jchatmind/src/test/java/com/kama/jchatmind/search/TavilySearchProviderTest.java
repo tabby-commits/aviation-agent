@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -48,6 +49,52 @@ class TavilySearchProviderTest {
     @Test
     void unavailableWhenDisabledOrKeyMissing() {
         assertThat(new TavilySearchProvider(properties(false), WebClient.builder()).isAvailable()).isFalse();
+    }
+
+    @Test
+    void skipsTimeRangeWhenAgentPassesAllSentinel() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>("");
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/search", exchange -> {
+            byte[] req = exchange.getRequestBody().readAllBytes();
+            requestBody.set(new String(req, StandardCharsets.UTF_8));
+            String resp = "{}";
+            byte[] bytes = resp.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+
+        TavilySearchProvider provider = new TavilySearchProvider(properties(true), WebClient.builder());
+        SearchResult result = provider.search(new SearchRequest("长征火箭 推力", 3, "all", List.of()));
+
+        assertThat(result.degraded()).isFalse();
+        assertThat(requestBody.get()).doesNotContain("\"time_range\"");
+    }
+
+    @Test
+    void sendsTimeRangeYearWhenValidEnumPassed() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>("");
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/search", exchange -> {
+            byte[] req = exchange.getRequestBody().readAllBytes();
+            requestBody.set(new String(req, StandardCharsets.UTF_8));
+            String resp = "{}";
+            byte[] bytes = resp.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+
+        TavilyProperties p = properties(true);
+        TavilySearchProvider provider = new TavilySearchProvider(p, WebClient.builder());
+        provider.search(new SearchRequest("q", 2, "year", List.of()));
+
+        assertThat(requestBody.get()).contains("\"time_range\":\"year\"");
     }
 
     private TavilyProperties properties(boolean enabled) {

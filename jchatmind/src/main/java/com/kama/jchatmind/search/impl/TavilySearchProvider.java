@@ -15,10 +15,23 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class TavilySearchProvider implements SearchProvider {
+
+    /**
+     * Tavily Search API {@code time_range} 允许的枚举（见官方文档）。
+     * 传入 {@code all}/{@code recent} 等会直接 4xx，故需在发送前剔除或放行。
+     */
+    private static final Set<String> TAVILY_TIME_RANGE_VALUES = Set.of(
+            "day", "week", "month", "year", "d", "w", "m", "y");
+
+    /** 调用方常用的“不限时间范围”占位词，不向 Tavily 发送 {@code time_range}。 */
+    private static final Set<String> OPEN_ENDED_TIME_RANGE_SENTINELS = Set.of(
+            "all", "any", "none", "unlimited", "ever", "everything", "lifetime", "na", "n/a");
 
     private final TavilyProperties properties;
     private final WebClient.Builder webClientBuilder;
@@ -80,7 +93,7 @@ public class TavilySearchProvider implements SearchProvider {
         body.put("include_answer", false);
         body.put("include_raw_content", false);
         if (StringUtils.hasText(request.timeRange())) {
-            applyTimeRange(body, request.timeRange());
+            applyTimeRange(body, request.timeRange().trim());
         }
         if (request.domainFilter() != null && !request.domainFilter().isEmpty()) {
             body.put("include_domains", request.domainFilter());
@@ -89,6 +102,13 @@ public class TavilySearchProvider implements SearchProvider {
     }
 
     private void applyTimeRange(Map<String, Object> body, String timeRange) {
+        if (!StringUtils.hasText(timeRange)) {
+            return;
+        }
+        String lc = timeRange.toLowerCase(Locale.ROOT);
+        if (OPEN_ENDED_TIME_RANGE_SENTINELS.contains(lc)) {
+            return;
+        }
         if (timeRange.matches("\\d{4}")) {
             body.put("start_date", timeRange + "-01-01");
             body.put("end_date", timeRange + "-12-31");
@@ -100,7 +120,11 @@ public class TavilySearchProvider implements SearchProvider {
             body.put("end_date", parts[1] + "-31");
             return;
         }
-        body.put("time_range", timeRange);
+        if (TAVILY_TIME_RANGE_VALUES.contains(lc)) {
+            body.put("time_range", lc);
+            return;
+        }
+        /* 未知 token（如 recent、last month）会令 Tavily 拒绝请求；跳过时间筛选，保证检索可用 */
     }
 
     private SearchHit toHit(TavilyHit hit) {

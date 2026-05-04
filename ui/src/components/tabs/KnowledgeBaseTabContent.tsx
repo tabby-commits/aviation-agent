@@ -26,7 +26,7 @@ const KnowledgeBaseTabContent: React.FC<KnowledgeBaseTabContentProps> = ({
   return (
     <div className="flex flex-col h-full">
       <Button
-        color="geekblue"
+        type="primary"
         variant="filled"
         icon={<PlusOutlined />}
         onClick={onCreateKnowledgeBaseClick}
@@ -35,10 +35,10 @@ const KnowledgeBaseTabContent: React.FC<KnowledgeBaseTabContentProps> = ({
         新建知识库
       </Button>
       <Divider />
-      <div className="flex-1 overflow-y-scroll rounded-lg">
+      <div className="flex-1 overflow-y-scroll rounded-lg bg-surface-muted">
         {knowledgeBases.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
-            <BookOutlined className="text-4xl mb-2" />
+            <BookOutlined className="text-4xl mb-2 text-brand-icon" />
             <p className="text-sm">暂无知识库</p>
             <p className="text-xs mt-1">点击上方按钮创建</p>
           </div>
@@ -51,7 +51,7 @@ const KnowledgeBaseTabContent: React.FC<KnowledgeBaseTabContentProps> = ({
                 className="w-full px-3 py-2.5 rounded-lg bg-white cursor-pointer transition-all hover:bg-gray-100 hover:shadow-sm"
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-200 to-purple-200 flex items-center justify-center shrink-0 text-lg mt-0.5">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-surface-soft to-brand-secondary flex items-center justify-center shrink-0 text-lg mt-0.5 text-white">
                     {kb.emoji}
                   </div>
                   <div className="flex-1 min-w-0">

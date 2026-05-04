@@ -33,8 +33,8 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall }> = ({ toolCall }) => {
 
   return (
     <div className="text-xs text-gray-500 flex items-center gap-1.5">
-      <ToolOutlined className="text-blue-500" />
-      <span className="font-mono text-blue-600">{toolCall.name}</span>
+      <ToolOutlined className="text-brand-icon" />
+      <span className="font-mono text-brand-icon">{toolCall.name}</span>
       {argPreview && (
         <>
           <span className="text-gray-400">·</span>
@@ -272,12 +272,12 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
               content={
                 <span className="flex items-center gap-2">
                   <span
-                    className="font-semibold text-blue-600"
+                    className="font-semibold text-brand-icon"
                     style={{
                       animation:
                         "pulse 0.7s cubic-bezier(0.4, 0, 0.6, 1) infinite",
                       textShadow:
-                        "0 0 10px rgba(37, 99, 235, 1), 0 0 20px rgba(37, 99, 235, 0.8), 0 0 30px rgba(37, 99, 235, 0.5)",
+                        "0 0 10px rgba(61, 126, 200, 1), 0 0 20px rgba(61, 126, 200, 0.8), 0 0 30px rgba(61, 126, 200, 0.5)",
                       filter: "brightness(1.3)",
                     }}
                   >

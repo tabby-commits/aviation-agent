@@ -328,9 +328,9 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                         return (
                           <div
                             key={kbId}
-                            className={`border rounded-lg p-4 cursor-pointer transition-all hover:border-blue-400 hover:bg-blue-50 ${
+                            className={`border rounded-lg p-4 cursor-pointer transition-all hover:border-brand-border hover:bg-brand-surface-muted ${
                               isSelected
-                                ? "border-blue-500 bg-blue-50"
+                                ? "border-brand-primary bg-brand-surface-muted"
                                 : "border-gray-200"
                             }`}
                             onClick={() => {
@@ -426,9 +426,9 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                         return (
                           <div
                             key={toolId}
-                            className={`border rounded-lg p-4 cursor-pointer transition-all hover:border-blue-400 hover:bg-blue-50 ${
+                            className={`border rounded-lg p-4 cursor-pointer transition-all hover:border-brand-border hover:bg-brand-surface-muted ${
                               isSelected
-                                ? "border-blue-500 bg-blue-50"
+                                ? "border-brand-primary bg-brand-surface-muted"
                                 : "border-gray-200"
                             }`}
                             onClick={() => {

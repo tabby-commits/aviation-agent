@@ -5,7 +5,16 @@ import App from "./App.tsx";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
-  <ConfigProvider locale={zhCN}>
+  <ConfigProvider
+    locale={zhCN}
+    theme={{
+      token: {
+        colorPrimary: "#1b3a5f",
+        colorInfo: "#2c5282",
+        borderRadius: 8,
+      },
+    }}
+  >
     <App />
   </ConfigProvider>
 );

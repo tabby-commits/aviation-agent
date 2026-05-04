@@ -42,7 +42,7 @@ public class WebSearchTool implements SubAgentOnlyTool {
 
     @org.springframework.ai.tool.annotation.Tool(
             name = "webSearch",
-            description = "执行外部 Web 搜索。参数：query 查询文本；count 返回条数；timeRange 时间范围；domainFilter 域名白名单。返回结构化 JSON。"
+            description = "执行外部 Web 搜索（底层 Tavily）。参数：query；count；timeRange（可选）——仅可使用 year/week/month/day 或缩写 y/w/m/d，或四位年份如 2025，或形如 2025-01~2025-06；不要使用 all/recent；不需要过滤时留空/null；domainFilter 域名白名单。返回结构化 JSON。"
     )
     public String webSearch(String query, Integer count, String timeRange, List<String> domainFilter) {
         int limit = clampCount(count);
