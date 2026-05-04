@@ -72,6 +72,14 @@ public class JChatMind {
 
     private static final Integer DEFAULT_MAX_MESSAGES = 20;
 
+    /** 主 Agent 调用 terminate 时，若本条助手可见正文短于该阈值则补跑一轮无工具合成，避免出现仅「让我整理」却无最终答复就结束。 */
+    private static final int MIN_MAIN_FINAL_ANSWER_CHARS = 200;
+
+    /**
+     * think() 最近一次产出的助手消息（含 toolCalls 与可见正文），供 terminate 后判断是否需补全最终答复。
+     */
+    private AssistantMessage lastThinkAssistantMessage;
+
     // SpringAI 自带的 ChatOptions, 不是 AgentDTO.ChatOptions
     private ChatOptions chatOptions;
 
@@ -321,7 +329,7 @@ public class JChatMind {
 
     // thinkPrompt 应该放到 system 中还是
     private boolean think() {
-        String thinkPrompt = """
+        String commonRules = """
                 现在你是一个智能的的具体「决策模块」
                 请根据当前对话上下文，决定下一步的动作。
                                 \s
@@ -329,6 +337,15 @@ public class JChatMind {
                 - 你目前拥有的知识库列表以及描述：%s
                 - 如果有缺失的上下文时，优先从知识库中进行搜索
                 """.formatted(this.availableKbs);
+        String thinkPrompt = role == AgentRole.MAIN
+                ? commonRules + """
+
+                【终止与最终答复（主 Agent）】
+                - 当你已收集完知识库/委派搜索等工具结果、准备收束时：必须先在「同一条助手消息」中写出用户可直接阅读的完整最终答复（Markdown，含用户要求的结构/分点/对比等），再考虑是否调用 terminate。
+                - 禁止在无实质最终正文时调用 terminate（例如仅写「让我整理一下」「现在可以给出综述了」等过渡语就结束）。
+                - 若当前轮适合直接收束且不必再调工具，也可以不调用 terminate，仅输出纯文本答复以结束。
+                """
+                : commonRules;
 
         // 将 thinkPrompt 通过 .user(thinkPrompt) 的方式构造进入 chatClient 中
         // 既能让每次 messageList 的最后一条是 本条提示词，
@@ -353,6 +370,8 @@ public class JChatMind {
                 .getOutput();
 
         List<AssistantMessage.ToolCall> toolCalls = output.getToolCalls();
+
+        this.lastThinkAssistantMessage = output;
 
         // 保存
         saveMessage(output);
@@ -407,8 +426,64 @@ public class JChatMind {
         if (toolResponseMessage.getResponses()
                 .stream()
                 .anyMatch(resp -> resp.name().equals("terminate"))) {
+            if (role == AgentRole.MAIN && needsMainAgentFinalAnswerSynthesis(lastThinkAssistantMessage)) {
+                synthesizeMainAgentFinalAnswer();
+            }
             this.agentState = AgentState.FINISHED;
             log.info("任务结束");
+        }
+    }
+
+    private boolean needsMainAgentFinalAnswerSynthesis(AssistantMessage assistant) {
+        if (assistant == null) {
+            return true;
+        }
+        String text = assistant.getText();
+        if (!StringUtils.hasText(text)) {
+            return true;
+        }
+        return text.trim().length() < MIN_MAIN_FINAL_ANSWER_CHARS;
+    }
+
+    /**
+     * 在仅过渡语 + terminate 等场景下，基于当前完整对话（含工具返回）补写一条无工具的最终用户可见答复。
+     */
+    private void synthesizeMainAgentFinalAnswer() {
+        try {
+            Prompt prompt = Prompt.builder()
+                    .chatOptions(this.chatOptions)
+                    .messages(this.chatMemory.get(this.chatSessionId))
+                    .build();
+            String synthesisSystem = """
+                    你已经完成全部工具检索与委派。请仅根据当前对话中的用户问题与工具返回内容，写出「最终给用户看的」完整答复：
+                    - 严格满足用户最初要求的格式（如结构化综述、分点、对比表、时间线等）；
+                    - 正文使用 Markdown；不要以「我需要搜索」「正在整理」「让我整理一下」等过程性套话开头，也不要复述本段系统说明；
+                    - 禁止调用任何工具，只输出最终正文。
+                    """;
+            ChatResponse synth = this.chatClient
+                    .prompt(prompt)
+                    .system(synthesisSystem)
+                    .call()
+                    .chatClientResponse()
+                    .chatResponse();
+            Assert.notNull(synth, "Synthesis chat response cannot be null");
+            AssistantMessage out = synth.getResult().getOutput();
+            if (out == null) {
+                log.warn("Synthesis produced null assistant output");
+                return;
+            }
+            if (out.getToolCalls() != null && !out.getToolCalls().isEmpty()) {
+                log.warn("Synthesis round requested tools; dropping tool calls and persisting text only");
+                out = AssistantMessage.builder()
+                        .content(out.getText())
+                        .build();
+            }
+            this.lastChatResponse = synth;
+            saveMessage(out);
+            this.chatMemory.add(this.chatSessionId, out);
+            refreshPendingMessages();
+        } catch (Exception e) {
+            log.warn("Main agent final-answer synthesis failed: {}", e.getMessage());
         }
     }
 
