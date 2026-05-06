@@ -44,7 +44,7 @@ class SubAgentExecutionServiceTest {
         SubAgentExecutionService service = service();
 
         DelegationResult result = service.execute(List.of(task("t1"), task("t2")),
-                new GlobalPolicy(2, 5), "session-1", "deepseek-chat");
+                new GlobalPolicy(2, 5), "session-1", "deepseek");
 
         assertThat(result.results()).extracting(SubTaskResult::taskId).containsExactlyInAnyOrder("t1", "t2");
         assertThat(result.failures()).isEmpty();

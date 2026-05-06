@@ -31,7 +31,7 @@ class ChartToolsTest {
 
     @Test
     void generateChartReturnsArtifactAndEmitsSseWhenSessionExists() {
-        AgenticSearchContext.set("session-1", "deepseek-chat");
+        AgenticSearchContext.set("session-1", "deepseek");
 
         String result = tool.generateChart(lineSpec());
 

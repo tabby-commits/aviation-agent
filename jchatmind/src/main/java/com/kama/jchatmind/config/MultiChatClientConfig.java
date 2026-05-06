@@ -9,7 +9,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class MultiChatClientConfig {
     // deepseek
-    @Bean("deepseek-chat")
+    @Bean("deepseek")
     public ChatClient deepSeekChatClient(DeepSeekChatModel deepSeekChatModel) {
         return ChatClient.create(deepSeekChatModel);
     }

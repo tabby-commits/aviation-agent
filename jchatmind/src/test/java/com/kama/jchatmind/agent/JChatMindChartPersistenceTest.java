@@ -36,7 +36,7 @@ class JChatMindChartPersistenceTest {
                 "agent",
                 "description",
                 null,
-                "deepseek-chat",
+                "deepseek",
                 null,
                 20,
                 List.of(),

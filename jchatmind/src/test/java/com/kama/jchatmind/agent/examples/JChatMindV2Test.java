@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class JChatMindV2Test {
 
     @Autowired
-    @Qualifier("deepseek-chat")
+    @Qualifier("deepseek")
     private ChatClient chatClient;
 
     @Autowired

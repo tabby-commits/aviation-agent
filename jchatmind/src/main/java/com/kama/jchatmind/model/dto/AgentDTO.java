@@ -33,17 +33,22 @@ public class AgentDTO {
     private LocalDateTime updatedAt;
 
     @Getter
-    @AllArgsConstructor
     public enum ModelType {
-        DEEPSEEK_CHAT("deepseek-chat"),
+        DEEPSEEK("deepseek", "deepseek-chat"),
         GLM_4_6("glm-4.6");
 
         @JsonValue
         private final String modelName;
+        private final List<String> aliases;
+
+        ModelType(String modelName, String... aliases) {
+            this.modelName = modelName;
+            this.aliases = List.of(aliases);
+        }
 
         public static ModelType fromModelName(String modelName) {
             for (ModelType type : ModelType.values()) {
-                if (type.modelName.equals(modelName)) {
+                if (type.modelName.equals(modelName) || type.aliases.contains(modelName)) {
                     return type;
                 }
             }

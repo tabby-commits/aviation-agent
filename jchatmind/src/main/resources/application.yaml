@@ -28,7 +28,7 @@ spring:
       base-url: https://api.deepseek.com
       chat:
         options:
-          model: deepseek-chat
+          model: deepseek-v4-flash
     zhipuai:
       api-key: 24cd783a283541c3a01e364a368ed997.AHTaMTMeUVycz4CG
       base-url: https://open.bigmodel.cn/api/paas
@@ -67,7 +67,7 @@ jchatmind:
     enabled: true
     router:
       enabled: true
-      model: deepseek-chat    # 意图路由使用的模型，建议非 reasoning 快速模型
+      model: deepseek    # 意图路由使用的模型，建议非 reasoning 快速模型
       timeout-ms: 3000
     delegation:
       max-parallel: 4         # 单次委派最大并发子任务数

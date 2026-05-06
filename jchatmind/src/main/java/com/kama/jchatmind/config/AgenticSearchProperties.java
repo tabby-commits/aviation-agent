@@ -29,7 +29,7 @@ public class AgenticSearchProperties {
         private boolean enabled = true;
 
         /** 路由使用的模型名称；建议使用非 reasoning 系列的快速模型以降低延迟 */
-        private String model = "deepseek-chat";
+        private String model = "deepseek";
 
         /** 路由调用超时（毫秒）；超时则降级为非 Agentic 模式 */
         private int timeoutMs = 3000;

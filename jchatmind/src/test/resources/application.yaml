@@ -25,7 +25,7 @@ spring:
       base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
       chat:
         options:
-          model: deepseek-chat
+          model: deepseek-v4-flash
     zhipuai:
       api-key: ${ZHIPUAI_API_KEY:sk-test}
       base-url: ${ZHIPUAI_BASE_URL:https://open.bigmodel.cn/api/paas}
