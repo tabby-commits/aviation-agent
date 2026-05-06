@@ -291,4 +291,21 @@ class SkillTest {
         assertTrue(skills.stream().anyMatch(s -> s.getName().equals("skill-2")));
         assertTrue(skills.stream().anyMatch(s -> s.getName().equals("skill-3")));
     }
+
+    @Test
+    @DisplayName("测试航天科技情报分析 Skill 已注册")
+    void testSpaceTechIntelligenceAnalystSkillRegistered() {
+        List<SkillDefinition> skills = scanner.scan(Path.of("skills"));
+
+        SkillDefinition skill = skills.stream()
+                .filter(s -> s.getName().equals("space-tech-intelligence-analyst"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("未找到航天科技情报分析 Skill"));
+
+        assertTrue(skill.getDescription().contains("航天科技情报分析"));
+        assertTrue(skill.getInstructions().contains("战略重要性"));
+        assertTrue(skill.getInstructions().contains("技术前瞻性"));
+        assertTrue(skill.getInstructions().contains("产业成熟度"));
+        assertTrue(skill.getInstructions().contains("全球技术影响力变化"));
+    }
 }
