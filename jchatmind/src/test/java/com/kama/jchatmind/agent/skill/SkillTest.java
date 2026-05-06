@@ -323,9 +323,16 @@ class SkillTest {
                 .orElseThrow(() -> new AssertionError("未找到航天科技情报分析 Skill"));
 
         assertTrue(skill.getDescription().contains("航天科技情报分析"));
-        assertTrue(skill.getInstructions().contains("战略重要性"));
+        assertTrue(skill.getDescription().contains("商业航天"));
+        assertTrue(skill.getDescription().contains("竞争力"));
+        assertTrue(skill.getDescription().contains("战略重要性"));
+        assertTrue(skill.getDescription().contains("产业成熟度"));
+        assertTrue(skill.getInstructions().contains("Workflow"));
+        assertTrue(skill.getInstructions().contains("Metric selection"));
+        assertTrue(skill.getInstructions().contains("Evidence rules"));
+        assertTrue(skill.getInstructions().contains("Output patterns"));
+        assertTrue(skill.getInstructions().contains("不得编造数据"));
         assertTrue(skill.getInstructions().contains("技术前瞻性"));
-        assertTrue(skill.getInstructions().contains("产业成熟度"));
         assertTrue(skill.getInstructions().contains("全球技术影响力变化"));
     }
 }
