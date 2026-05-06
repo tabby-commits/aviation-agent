@@ -4,6 +4,7 @@ import com.kama.jchatmind.agent.skill.model.SkillDefinition;
 import com.kama.jchatmind.agent.skill.parser.SkillMdParser;
 import com.kama.jchatmind.agent.skill.scanner.SkillScanner;
 import com.kama.jchatmind.agent.skill.service.SkillService;
+import com.kama.jchatmind.agent.tools.ToolType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -265,6 +266,25 @@ class SkillTest {
     void testSkillToolImplementsToolInterface() {
         // 验证 SkillTool 实现了 Tool 接口
         assertTrue(Tool.class.isAssignableFrom(SkillTool.class));
+    }
+
+    @Test
+    @DisplayName("测试 SkillTool 是固定工具")
+    void testSkillToolIsFixedTool() {
+        assertEquals(ToolType.FIXED, new SkillTool(null).getType());
+    }
+
+    @Test
+    @DisplayName("测试 invokeSkill 描述提示航天情报分析 Skill")
+    void testInvokeSkillDescriptionMentionsSpaceTechSkill() throws NoSuchMethodException {
+        org.springframework.ai.tool.annotation.Tool annotation = SkillTool.class
+                .getMethod("invokeSkill", String.class, String.class)
+                .getAnnotation(org.springframework.ai.tool.annotation.Tool.class);
+
+        assertNotNull(annotation);
+        assertTrue(annotation.description().contains("space-tech-intelligence-analyst"));
+        assertTrue(annotation.description().contains("航天"));
+        assertTrue(annotation.description().contains("竞争力"));
     }
 
     @Test

@@ -50,7 +50,7 @@ public class SkillTool implements Tool {
 
     @Override
     public ToolType getType() {
-        return ToolType.OPTIONAL;
+        return ToolType.FIXED;
     }
 
     /**
@@ -60,7 +60,13 @@ public class SkillTool implements Tool {
      * @param context   调用上下文（可选）
      * @return Skill 的完整内容
      */
-    @org.springframework.ai.tool.annotation.Tool(name = "invokeSkill", description = "调用指定的 Skill（专业能力包）。参数 skillName 为 Skill 名称，context 为可选的上下文信息。当 AI 需要执行特定领域的任务时，应调用此工具获取 Skill 的详细指令。")
+    @org.springframework.ai.tool.annotation.Tool(name = "invokeSkill", description = """
+            调用指定的 Skill（专业能力包），获取特定领域任务的详细分析指令。
+            参数 skillName 为 Skill 名称，context 为用户问题或任务上下文。
+            当问题涉及航天、商业航天、航天科技情报、科技竞争力、战略重要性、技术前瞻性、创新能力、产业成熟度或动态路径评估时，
+            必须先调用本工具并传入 skillName="space-tech-intelligence-analyst"，context 传入用户原始问题，然后再开展分析。
+            如果不确定应使用哪个 Skill，先调用 listSkills 查看可用 Skill。
+            """)
     public String invokeSkill(String skillName, String context) {
         log.info("调用 Skill: {}, context: {}", skillName, context);
         return skillService.invokeSkill(skillName, context);
