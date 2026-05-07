@@ -51,18 +51,18 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
   }, [selectedAgentId, agents]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-w-0">
       {/* Agent 选择器 - 顶部 */}
       {agents.length > 0 && (
-        <div className="border-b border-gray-200 bg-white px-4 py-3">
-          <div className="flex items-center justify-start">
+        <div className="border-b border-slate-200/80 bg-white/90 px-6 py-3">
+          <div className="max-w-4xl mx-auto flex items-center justify-start">
             <Select
               value={effectiveAgentId}
               onChange={(value) => setSelectedAgentId(value)}
               style={{ width: 200 }}
               className="agent-selector"
               suffixIcon={<DownOutlined className="text-gray-400" />}
-              placeholder="选择智能体助手"
+              placeholder="选择情报智能体"
               optionRender={(option) => (
                 <div className="flex items-center gap-2">
                   <span className="text-lg">
@@ -83,28 +83,28 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
         <div className="max-w-2xl w-full space-y-6">
           <div className="text-center mb-8">
             <Title level={2} className="mb-2">
-              开始新的对话
+              启动情报研判
             </Title>
             <Text type="secondary" className="text-base">
-              选择一个智能体助手开始聊天，或直接发送消息创建新会话
+              选择情报智能体，围绕航天科技动态、任务态势和资料线索展开分析
             </Text>
           </div>
 
           <Space direction="vertical" size="large" className="w-full">
             <Card
               hoverable
-              className="cursor-pointer transition-all hover:shadow-lg"
+              className="cursor-pointer transition-all hover:-translate-y-0.5"
             >
               <Space size="middle">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center">
-                  <RobotOutlined className="text-white text-xl" />
+                <div className="w-12 h-12 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
+                  <RobotOutlined className="text-blue-600 text-xl" />
                 </div>
                 <div>
                   <Title level={5} className="mb-1">
-                    智能对话
+                    任务态势分析
                   </Title>
                   <Text type="secondary">
-                    与 AI 助手进行智能对话，获取帮助和建议
+                    研判航天任务进展、机构动向和技术路线变化
                   </Text>
                 </div>
               </Space>
@@ -112,18 +112,18 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
 
             <Card
               hoverable
-              className="cursor-pointer transition-all hover:shadow-lg"
+              className="cursor-pointer transition-all hover:-translate-y-0.5"
             >
               <Space size="middle">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-teal-400 flex items-center justify-center">
-                  <BulbOutlined className="text-white text-xl" />
+                <div className="w-12 h-12 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center">
+                  <BulbOutlined className="text-emerald-600 text-xl" />
                 </div>
                 <div>
                   <Title level={5} className="mb-1">
-                    知识问答
+                    情报库检索
                   </Title>
                   <Text type="secondary">
-                    基于知识库进行问答，获取准确的信息
+                    基于已归档材料检索证据，辅助形成分析结论
                   </Text>
                 </div>
               </Space>
@@ -131,18 +131,18 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
 
             <Card
               hoverable
-              className="cursor-pointer transition-all hover:shadow-lg"
+              className="cursor-pointer transition-all hover:-translate-y-0.5"
             >
               <Space size="middle">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-400 to-red-400 flex items-center justify-center">
-                  <MessageOutlined className="text-white text-xl" />
+                <div className="w-12 h-12 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center">
+                  <MessageOutlined className="text-amber-600 text-xl" />
                 </div>
                 <div>
                   <Title level={5} className="mb-1">
-                    快速开始
+                    快速发起研判
                   </Title>
                   <Text type="secondary">
-                    在下方输入框输入消息，立即开始对话
+                    输入情报问题、目标对象或分析任务，立即创建研判记录
                   </Text>
                 </div>
               </Space>
@@ -150,9 +150,9 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
           </Space>
         </div>
       </div>
-      <div className="border-t border-gray-200 bg-white">
+      <div className="border-t border-slate-200/80 bg-white/90">
         {/* 输入框 */}
-        <div className="px-4 pb-4 pt-4">
+        <div className="max-w-4xl mx-auto px-6 pb-4 pt-4">
           <Sender
             onSubmit={async () => {
               if (!effectiveAgentId) return;
@@ -176,7 +176,7 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
             }}
             value={message}
             loading={loading}
-            placeholder="输入消息开始对话..."
+            placeholder="输入航天科技情报问题或研判任务..."
             onChange={(value) => {
               setMessage(value);
             }}

@@ -63,7 +63,7 @@ const AgentChatView: React.FC = () => {
     // 如果没有 chatSessionId，创建新会话
     if (!chatSessionId) {
       if (!agentId) {
-        antdMessage.warning("请先创建一个智能体助手");
+        antdMessage.warning("请先创建一个情报智能体");
         return;
       }
       setLoading(true);
@@ -84,8 +84,8 @@ const AgentChatView: React.FC = () => {
           },
         });
       } catch (error) {
-        console.error("创建聊天会话失败:", error);
-        antdMessage.error("创建聊天会话失败，请重试");
+        console.error("创建研判会话失败:", error);
+        antdMessage.error("创建研判会话失败，请重试");
       } finally {
         setLoading(false);
       }
@@ -182,15 +182,17 @@ const AgentChatView: React.FC = () => {
 
   // 如果有 chatSessionId，显示正常的聊天界面
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-w-0">
       <AgentChatHistory
         messages={messages}
         displayAgentStatus={displayAgentStatus}
         agentStatusText={agentStatusText}
         agentStatusType={agentStatusType}
       />
-      <div className="border-t border-gray-200 p-4 bg-white">
-        <AgentChatInput onSend={handleSendMessage} />
+      <div className="border-t border-slate-200/80 bg-white/90 px-6 py-4">
+        <div className="max-w-4xl mx-auto">
+          <AgentChatInput onSend={handleSendMessage} />
+        </div>
       </div>
     </div>
   );
