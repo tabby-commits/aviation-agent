@@ -46,7 +46,7 @@ const KnowledgeBaseView: React.FC = () => {
     const { file, onSuccess, onError } = options;
 
     if (!knowledgeBaseId) {
-      message.error("请先选择知识库");
+      message.error("请先选择情报库");
       return;
     }
 
@@ -54,7 +54,7 @@ const KnowledgeBaseView: React.FC = () => {
 
     try {
       await uploadDocument(knowledgeBaseId, file as File);
-      message.success("文档上传成功");
+      message.success("情报材料上传成功");
       await refreshDocuments();
       onSuccess?.(file);
     } catch (error) {
@@ -77,7 +77,7 @@ const KnowledgeBaseView: React.FC = () => {
   // 表格列定义
   const columns = [
     {
-      title: "文件名",
+      title: "材料名称",
       dataIndex: "filename",
       key: "filename",
       render: (text: string) => (
@@ -88,7 +88,7 @@ const KnowledgeBaseView: React.FC = () => {
       ),
     },
     {
-      title: "类型",
+      title: "材料类型",
       dataIndex: "filetype",
       key: "filetype",
       width: 120,
@@ -106,7 +106,7 @@ const KnowledgeBaseView: React.FC = () => {
       width: 100,
       render: (_: unknown, record: DocumentVO) => (
         <Popconfirm
-          title="确定要删除这个文档吗？"
+          title="确定要删除这份情报材料吗？"
           description="删除后将无法恢复"
           onConfirm={() => deleteDocument(record.id)}
           okText="确定"
@@ -125,14 +125,14 @@ const KnowledgeBaseView: React.FC = () => {
     return (
       <div className="flex flex-col h-full items-center justify-center p-6">
         <Empty
-          image={<BookOutlined className="text-6xl text-gray-300" />}
+          image={<BookOutlined className="text-6xl text-slate-300" />}
           description={
             <div className="mt-4">
               <Title level={4} type="secondary">
-                未选择知识库
+                未选择情报库
               </Title>
               <Text type="secondary" className="text-sm">
-                请从左侧知识库列表中选择一个知识库查看详情
+                请从左侧情报库列表中选择资料来源查看详情
               </Text>
             </div>
           }
@@ -149,10 +149,10 @@ const KnowledgeBaseView: React.FC = () => {
           description={
             <div className="mt-4">
               <Title level={4} type="secondary">
-                知识库不存在
+                情报库不存在
               </Title>
               <Text type="secondary" className="text-sm">
-                请检查知识库 ID 是否正确
+                请检查情报库 ID 是否正确
               </Text>
             </div>
           }
@@ -163,25 +163,25 @@ const KnowledgeBaseView: React.FC = () => {
 
   // 显示知识库详情和文档列表
   return (
-    <div className="flex flex-col h-full p-6 overflow-y-auto">
+    <div className="flex flex-col h-full p-6 overflow-y-auto workspace-scrollbar">
       <div className="max-w-6xl w-full mx-auto">
-        <div className="mb-3">
-          <Card>
+        <div className="mb-4">
+          <Card className="panel-surface">
             <div className="flex items-start gap-4">
-              <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-blue-200 to-purple-200 flex items-center justify-center text-3xl shrink-0">
+              <div className="w-16 h-16 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 flex items-center justify-center text-3xl shrink-0">
                 <BookOutlined />
               </div>
               <div className="flex-1">
-                <Title level={3} className="mb-2">
+                <Title level={3} className="mb-2 text-slate-900">
                   {currentKnowledgeBase.name}
                 </Title>
                 {currentKnowledgeBase.description && (
-                  <Paragraph className="text-gray-600 mb-0">
+                  <Paragraph className="text-slate-600 mb-0">
                     {currentKnowledgeBase.description}
                   </Paragraph>
                 )}
                 <Text type="secondary" className="text-sm">
-                  知识库 ID: {currentKnowledgeBase.knowledgeBaseId}
+                  情报库 ID: {currentKnowledgeBase.knowledgeBaseId}
                 </Text>
               </div>
             </div>
@@ -189,9 +189,9 @@ const KnowledgeBaseView: React.FC = () => {
         </div>
         {/* 知识库信息卡片 */}
 
-        <div className="mb-3">
+        <div className="mb-4">
           {/* 上传文档区域 */}
-          <Card title="上传文档">
+          <Card title="上传情报材料" className="panel-surface">
             <Upload
               customRequest={handleUpload}
               showUploadList={false}
@@ -204,7 +204,7 @@ const KnowledgeBaseView: React.FC = () => {
                 loading={uploading}
                 size="large"
               >
-                选择文件上传
+                选择材料上传
               </Button>
             </Upload>
             <Text type="secondary" className="block mt-2 text-xs">
@@ -213,16 +213,21 @@ const KnowledgeBaseView: React.FC = () => {
           </Card>
         </div>
 
-        <div className="mb-3">
+        <div className="mb-4">
           {/* 文档列表 */}
-          <Card title={`文档列表 (${documents.length})`}>
+          <Card
+            title={`情报材料列表 (${documents.length})`}
+            className="panel-surface"
+          >
             {loading ? (
               <div className="text-center py-8">
                 <Text type="secondary">加载中...</Text>
               </div>
             ) : documents.length === 0 ? (
               <Empty
-                description={<Text type="secondary">暂无文档，请上传文档</Text>}
+                description={
+                  <Text type="secondary">暂无情报材料，请上传材料</Text>
+                }
               />
             ) : (
               <Table

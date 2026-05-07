@@ -41,7 +41,7 @@ const ChatTabContent: React.FC = () => {
       return session.title;
     }
     const agentName = agentMap.get(session.agentId);
-    return agentName ? `与 ${agentName} 的对话` : "新对话";
+    return agentName ? `与 ${agentName} 的研判任务` : "新研判任务";
   };
 
   return (
@@ -51,12 +51,12 @@ const ChatTabContent: React.FC = () => {
         variant="filled"
         icon={<PlusOutlined />}
         onClick={handleCreateNewChat}
-        className="w-full"
+        className="w-full font-medium"
       >
-        新聊天
+        新建研判
       </Button>
       <Divider />
-      <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50 rounded-lg">
+      <div className="flex-1 min-h-0 overflow-y-auto workspace-scrollbar bg-slate-50/80 border border-slate-200/80 rounded-lg">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
             <p className="text-sm">加载中...</p>
@@ -64,8 +64,8 @@ const ChatTabContent: React.FC = () => {
         ) : chatSessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
             <MessageOutlined className="text-4xl mb-2" />
-            <p className="text-sm">暂无聊天记录</p>
-            <p className="text-xs mt-1">点击上方按钮创建新聊天</p>
+            <p className="text-sm">暂无研判记录</p>
+            <p className="text-xs mt-1">点击上方按钮发起情报研判</p>
           </div>
         ) : (
           <div className="space-y-1.5 p-1.5">
@@ -73,20 +73,20 @@ const ChatTabContent: React.FC = () => {
               <div
                 key={session.id}
                 onClick={() => handleSelectChatSession(session.id)}
-                className="w-full px-3 py-2.5 rounded-lg bg-white cursor-pointer transition-all hover:bg-gray-100 hover:shadow-sm group relative"
+                className="w-full px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 group relative list-item-surface"
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-200 to-purple-200 flex items-center justify-center shrink-0 text-lg mt-0.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0 text-lg mt-0.5">
                     <MessageOutlined />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900 truncate">
+                    <div className="font-medium text-slate-900 truncate">
                       {getDisplayTitle(session)}
                     </div>
                   </div>
                   <div onClick={(e) => e.stopPropagation()}>
                     <Popconfirm
-                      title="确定要删除这条聊天记录吗？"
+                      title="确定要删除这条研判记录吗？"
                       description="删除后将无法恢复"
                       onConfirm={() => handleDeleteChatSession(session.id)}
                       okText="确定"

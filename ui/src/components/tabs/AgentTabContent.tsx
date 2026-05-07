@@ -58,7 +58,7 @@ const AgentTabContent: React.FC<AgentTabContentProps> = ({
         onClick: (e) => {
           e.domEvent.stopPropagation();
           Modal.confirm({
-            title: "确定要删除这个智能体吗？",
+            title: "确定要删除这个情报智能体吗？",
             content: "删除后将无法恢复",
             okText: "确定",
             cancelText: "取消",
@@ -81,16 +81,16 @@ const AgentTabContent: React.FC<AgentTabContentProps> = ({
         variant="filled"
         icon={<PlusOutlined />}
         onClick={onCreateAgentClick}
-        className="w-full"
+        className="w-full font-medium"
       >
-        智能体助手
+        新建情报智能体
       </Button>
       <Divider />
-      <div className="flex-1 overflow-y-auto bg-gray-50 rounded-lg p-1.5">
+      <div className="flex-1 overflow-y-auto workspace-scrollbar bg-slate-50/80 border border-slate-200/80 rounded-lg p-1.5">
         {agents.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
-            <p className="text-sm">暂无智能体</p>
-            <p className="text-xs mt-1">点击上方按钮添加</p>
+            <p className="text-sm">暂无情报智能体</p>
+            <p className="text-xs mt-1">点击上方按钮配置分析角色</p>
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -101,23 +101,23 @@ const AgentTabContent: React.FC<AgentTabContentProps> = ({
                 <div
                   key={agent.id}
                   onClick={() => onSelectAgent(agent.id)}
-                  className="w-full px-3 py-3 rounded-lg bg-white cursor-pointer transition-all hover:bg-gray-100 hover:shadow-sm group relative"
+                  className="w-full px-3 py-3 rounded-lg cursor-pointer transition-all duration-150 group relative list-item-surface"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-yellow-200 to-orange-200 flex items-center justify-center shrink-0 text-lg mt-0.5">
+                    <div className="w-8 h-8 rounded-lg bg-amber-100 border border-amber-200/80 flex items-center justify-center shrink-0 text-lg mt-0.5">
                       {agent.emoji}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-900 truncate">
+                      <div className="font-medium text-slate-900 truncate">
                         {agent.name}
                       </div>
                       {agent.description && (
-                        <div className="text-xs text-gray-500 mt-1 line-clamp-1">
+                        <div className="text-xs text-slate-500 mt-1 line-clamp-1">
                           {agent.description}
                         </div>
                       )}
                       {agent.updatedAt && (
-                        <div className="text-xs text-gray-400 mt-1">
+                        <div className="text-xs text-slate-400 mt-1">
                           {formatDateTime(agent.updatedAt)}
                         </div>
                       )}

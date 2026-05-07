@@ -55,7 +55,7 @@ const SideMenu: React.FC<SideMenuProps> = () => {
   const items: TabsProps["items"] = [
     {
       key: "agent",
-      label: <span className="select-none">智能体助手</span>,
+      label: <span className="select-none">情报智能体</span>,
       children: (
         <AgentTabContent
           agents={agents}
@@ -71,12 +71,12 @@ const SideMenu: React.FC<SideMenuProps> = () => {
     },
     {
       key: "chat",
-      label: <span className="select-none">聊天记录</span>,
+      label: <span className="select-none">研判记录</span>,
       children: <ChatTabContent />,
     },
     {
       key: "knowledgeBase",
-      label: <span className="select-none">知识库</span>,
+      label: <span className="select-none">情报库</span>,
       children: (
         <KnowledgeBaseTabContent
           knowledgeBases={knowledgeBases}
@@ -91,15 +91,17 @@ const SideMenu: React.FC<SideMenuProps> = () => {
 
   return (
     <div className="px-4 flex flex-col h-full">
-      <div className="h-14 w-full flex items-center border-b border-gray-200">
-        <div className="flex items-center gap-2.5 mx-4">
-          <RobotOutlined className="text-xl text-indigo-600" />
-          <div className="text-lg font-semibold select-none text-gray-900">
-            JChatMind
+      <div className="h-16 w-full flex items-center border-b border-slate-200/80">
+        <div className="flex items-center gap-3 mx-2">
+          <div className="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-sm">
+            <RobotOutlined className="text-lg" />
+          </div>
+          <div className="text-lg font-semibold select-none text-slate-900 tracking-tight">
+            航天情报工作台
           </div>
         </div>
       </div>
-      <div className="flex-1 min-h-0 flex flex-col">
+      <div className="flex-1 min-h-0 flex flex-col py-4">
         <Tabs
           activeKey={activeKey}
           onChange={handleTabChange}

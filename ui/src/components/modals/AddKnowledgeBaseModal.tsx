@@ -56,7 +56,7 @@ const AddKnowledgeBaseModal: React.FC<AddKnowledgeBaseModalProps> = ({
     <Modal
       open={open}
       onCancel={handleCancel}
-      title="新建知识库"
+      title="新建情报库"
       footer={null}
       width={600}
       centered
@@ -67,7 +67,7 @@ const AddKnowledgeBaseModal: React.FC<AddKnowledgeBaseModalProps> = ({
             名称 <span className="text-red-500">*</span>
           </label>
           <Input
-            placeholder="请输入知识库名称"
+            placeholder="请输入情报库名称"
             value={formData.name}
             onChange={(e) =>
               setFormData({ ...formData, name: e.target.value })
@@ -80,7 +80,7 @@ const AddKnowledgeBaseModal: React.FC<AddKnowledgeBaseModalProps> = ({
             描述
           </label>
           <TextArea
-            placeholder="请输入知识库描述（可选）"
+            placeholder="请输入情报库描述（可选）"
             rows={4}
             value={formData.description}
             onChange={(e) =>
