@@ -1,6 +1,12 @@
 package com.kama.jchatmind.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kama.jchatmind.agent.hook.AgentHook;
+import com.kama.jchatmind.agent.hook.AgentHookContext;
+import com.kama.jchatmind.agent.hook.RecoveryBudget;
+import com.kama.jchatmind.agent.hook.RecoveryDecision;
+import com.kama.jchatmind.agent.hook.RecoveryHookHandler;
+import com.kama.jchatmind.agent.hook.ToolRecoverySupport;
 import com.kama.jchatmind.converter.ChatMessageConverter;
 import com.kama.jchatmind.agent.search.AgenticSearchContext;
 import com.kama.jchatmind.agent.tools.ChartTools;
@@ -28,7 +34,10 @@ import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -101,6 +110,16 @@ public class JChatMind {
     private boolean emitSse = true;
 
     private int maxSteps = DEFAULT_MAX_STEPS;
+
+    private AgentHook agentHook;
+
+    private ToolRecoverySupport toolRecoverySupport;
+
+    private int currentStepIndex;
+
+    private int finalAnswerSyntheses;
+
+    private final Map<String, Integer> toolRetryCounts = new HashMap<>();
 
     // 最后一次的 ChatResponse
     private ChatResponse lastChatResponse;
@@ -195,6 +214,8 @@ public class JChatMind {
         this.persistMessages = persistMessages;
         this.emitSse = emitSse;
         this.maxSteps = maxSteps == null ? DEFAULT_MAX_STEPS : maxSteps;
+        this.agentHook = new RecoveryHookHandler();
+        this.toolRecoverySupport = new ToolRecoverySupport(this.agentHook);
 
         this.agentState = AgentState.IDLE;
 
@@ -381,7 +402,7 @@ public class JChatMind {
         logToolCalls(toolCalls);
 
         // 如果工具调用不为空，则进入执行阶段
-        return !toolCalls.isEmpty();
+        return toolCalls != null && !toolCalls.isEmpty();
     }
 
     // 执行
@@ -399,18 +420,29 @@ public class JChatMind {
 
         ToolExecutionResult toolExecutionResult;
         try {
+            emitBeforeToolCalls();
             AgenticSearchContext.set(this.chatSessionId, this.model);
             toolExecutionResult = toolCallingManager.executeToolCalls(prompt, this.lastChatResponse);
+        } catch (Exception e) {
+            ToolResponseMessage recovered = recoverToolExecutionError(e);
+            this.chatMemory.add(this.chatSessionId, this.lastThinkAssistantMessage);
+            this.chatMemory.add(this.chatSessionId, recovered);
+            saveMessage(recovered);
+            refreshPendingMessages();
+            return;
         } finally {
             AgenticSearchContext.clear();
         }
 
-        this.chatMemory.clear(this.chatSessionId);
-        this.chatMemory.add(this.chatSessionId, toolExecutionResult.conversationHistory());
-
         ToolResponseMessage toolResponseMessage = (ToolResponseMessage) toolExecutionResult
                 .conversationHistory()
                 .get(toolExecutionResult.conversationHistory().size() - 1);
+        toolResponseMessage = recoverEmptyToolResponses(toolResponseMessage);
+
+        List<Message> conversationHistory = new ArrayList<>(toolExecutionResult.conversationHistory());
+        conversationHistory.set(conversationHistory.size() - 1, toolResponseMessage);
+        this.chatMemory.clear(this.chatSessionId);
+        this.chatMemory.add(this.chatSessionId, conversationHistory);
 
         String collect = toolResponseMessage.getResponses()
                 .stream()
@@ -434,6 +466,126 @@ public class JChatMind {
         }
     }
 
+    private void emitBeforeToolCalls() {
+        if (lastThinkAssistantMessage == null || lastThinkAssistantMessage.getToolCalls() == null) {
+            return;
+        }
+        for (AssistantMessage.ToolCall toolCall : lastThinkAssistantMessage.getToolCalls()) {
+            agentHook.beforeToolCall(baseHookContext(
+                    toolCall.name(),
+                    toolCall.arguments(),
+                    null,
+                    retryCount(toolCall.name())
+            ));
+            emitHookEvent("before_tool_call", toolCall.name(), null);
+        }
+    }
+
+    private ToolResponseMessage recoverEmptyToolResponses(ToolResponseMessage toolResponseMessage) {
+        ToolResponseMessage recovered = ToolResponseMessage.builder()
+                .responses(toolResponseMessage.getResponses()
+                        .stream()
+                        .map(response -> toolRecoverySupport.recoverEmptyResponse(
+                                response,
+                                baseHookContext(response.name(), null, null, retryCount(response.name()))
+                        ))
+                        .toList())
+                .build();
+        for (ToolResponseMessage.ToolResponse response : recovered.getResponses()) {
+            agentHook.afterToolCall(baseHookContext(
+                    response.name(),
+                    null,
+                    response.responseData(),
+                    retryCount(response.name())
+            ));
+            if (toolRecoverySupport.isEmptyResult(findOriginalResponse(toolResponseMessage, response.id()))) {
+                int retryCount = retryCount(response.name());
+                if (retryCount < RecoveryBudget.defaults().maxToolRetries()) {
+                    toolRetryCounts.put(response.name(), retryCount + 1);
+                }
+                emitHookEvent("tool_empty_result", response.name(), null);
+            }
+        }
+        return recovered;
+    }
+
+    private String findOriginalResponse(ToolResponseMessage message, String callId) {
+        return message.getResponses()
+                .stream()
+                .filter(response -> Objects.equals(response.id(), callId))
+                .map(ToolResponseMessage.ToolResponse::responseData)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private ToolResponseMessage recoverToolExecutionError(Exception e) {
+        if (lastThinkAssistantMessage == null
+                || lastThinkAssistantMessage.getToolCalls() == null
+                || lastThinkAssistantMessage.getToolCalls().isEmpty()) {
+            int retryCount = retryCount("unknownTool");
+            if (retryCount < RecoveryBudget.defaults().maxToolRetries()) {
+                toolRetryCounts.put("unknownTool", retryCount + 1);
+            }
+            return toolRecoverySupport.errorResponse(
+                    null,
+                    "unknownTool",
+                    e,
+                    baseHookContext("unknownTool", null, null, retryCount)
+            );
+        }
+        List<ToolResponseMessage.ToolResponse> responses = new ArrayList<>();
+        for (AssistantMessage.ToolCall toolCall : lastThinkAssistantMessage.getToolCalls()) {
+            String toolName = toolCall.name();
+            int retryCount = retryCount(toolName);
+            responses.add(toolRecoverySupport.errorToolResponse(
+                    toolCall.id(),
+                    toolName,
+                    e,
+                    baseHookContext(toolName, toolCall.arguments(), null, retryCount)
+            ));
+            if (retryCount < RecoveryBudget.defaults().maxToolRetries()) {
+                toolRetryCounts.put(toolName, retryCount + 1);
+            }
+            emitHookEvent("tool_error", toolName, null);
+        }
+        return ToolResponseMessage.builder().responses(responses).build();
+    }
+
+    private int retryCount(String toolName) {
+        return toolRetryCounts.getOrDefault(toolName, 0);
+    }
+
+    private AgentHookContext baseHookContext(String toolName, String toolArguments, Object rawResult, int retryCount) {
+        return AgentHookContext.builder()
+                .sessionId(this.chatSessionId)
+                .agentRole(this.role)
+                .stepIndex(this.currentStepIndex)
+                .toolName(toolName)
+                .toolArguments(toolArguments)
+                .rawResult(rawResult)
+                .retryCount(retryCount)
+                .recoveryBudget(RecoveryBudget.defaults())
+                .build();
+    }
+
+    private void emitHookEvent(String stage, String toolName, String taskId) {
+        if (!emitSse || sseService == null || !StringUtils.hasText(chatSessionId)) {
+            return;
+        }
+        try {
+            sseService.send(chatSessionId, SseMessage.builder()
+                    .type(SseMessage.Type.AGENT_HOOK_RECOVERY)
+                    .payload(SseMessage.Payload.builder()
+                            .stage(stage)
+                            .toolName(toolName)
+                            .taskId(taskId)
+                            .build())
+                    .build());
+        } catch (Exception ignored) {
+            // Hook telemetry must not fail the agent.
+        }
+    }
+
     private boolean needsMainAgentFinalAnswerSynthesis(AssistantMessage assistant) {
         if (assistant == null) {
             return true;
@@ -449,6 +601,12 @@ public class JChatMind {
      * 在仅过渡语 + terminate 等场景下，基于当前完整对话（含工具返回）补写一条无工具的最终用户可见答复。
      */
     private void synthesizeMainAgentFinalAnswer() {
+        if (finalAnswerSyntheses >= RecoveryBudget.defaults().maxFinalAnswerSyntheses()) {
+            return;
+        }
+        RecoveryDecision decision = agentHook.beforeFinalAnswer(baseHookContext(null, null, null, finalAnswerSyntheses));
+        emitHookEvent("before_final_answer", null, null);
+        finalAnswerSyntheses++;
         try {
             Prompt prompt = Prompt.builder()
                     .chatOptions(this.chatOptions)
@@ -483,7 +641,7 @@ public class JChatMind {
             this.chatMemory.add(this.chatSessionId, out);
             refreshPendingMessages();
         } catch (Exception e) {
-            log.warn("Main agent final-answer synthesis failed: {}", e.getMessage());
+            log.warn("Main agent final-answer synthesis failed after hook {}: {}", decision.action(), e.getMessage());
         }
     }
 
@@ -506,12 +664,15 @@ public class JChatMind {
             for (int i = 0; i < maxSteps && agentState != AgentState.FINISHED; i++) {
                 // 当前步骤，用于实现 Agent Loop
                 int currentStep = i + 1;
+                this.currentStepIndex = currentStep;
                 step();
                 if (currentStep >= maxSteps) {
                     agentState = AgentState.FINISHED;
                     log.warn("Max steps reached, stopping agent");
                 }
             }
+            agentHook.onTaskCompleted(baseHookContext(null, null, null, 0));
+            emitHookEvent("task_completed", null, null);
             agentState = AgentState.FINISHED;
         } catch (Exception e) {
             agentState = AgentState.ERROR;

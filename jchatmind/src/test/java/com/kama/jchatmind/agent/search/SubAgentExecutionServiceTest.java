@@ -103,6 +103,23 @@ class SubAgentExecutionServiceTest {
         assertThat(result.failures().get(0).errorCode()).isEqualTo("SEARCH_DELEGATION_TIMEOUT");
     }
 
+    @Test
+    void failedSubAgentIsRedelegatedOnceBeforeReturningFailure() {
+        when(searchService.isAvailable()).thenReturn(true);
+        when(runtimeFactory.runSubAgent(any(), any(), any(), anyInt(), any()))
+                .thenThrow(new IllegalStateException("bad json"))
+                .thenAnswer(invocation -> ok(invocation.getArgument(0, SubTaskSpec.class).taskId()));
+        SubAgentExecutionService service = service();
+
+        DelegationResult result = service.execute(List.of(task("repairable")),
+                new GlobalPolicy(1, 5), "session-1", "deepseek");
+
+        assertThat(result.results()).extracting(SubTaskResult::taskId).containsExactly("repairable");
+        assertThat(result.failures()).isEmpty();
+        verify(runtimeFactory, org.mockito.Mockito.times(2))
+                .runSubAgent(any(), any(), any(), anyInt(), any());
+    }
+
     private SubAgentExecutionService service() {
         return new SubAgentExecutionService(runtimeFactory, properties, searchService, sseService, executor);
     }
