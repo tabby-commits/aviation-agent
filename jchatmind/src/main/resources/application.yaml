@@ -45,6 +45,14 @@ document:
     base-path: ./data/documents
 
 jchatmind:
+  context-management:
+    enabled: true
+    tool-result-max-chars: 8000
+    tool-result-head-chars: 3500
+    tool-result-tail-chars: 3500
+    summary-trigger-messages: 16
+    summary-keep-recent-messages: 8
+    max-prompt-chars: 60000
   skill:
     enabled: true
     scan-directories:

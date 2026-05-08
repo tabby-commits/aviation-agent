@@ -36,8 +36,10 @@ public class ChatMessageFacadeServiceImpl implements ChatMessageFacadeService {
 
         for (ChatMessage chatMessage : chatMessages) {
             try {
-                ChatMessageVO vo = chatMessageConverter.toVO(chatMessage);
-                result.add(vo);
+                ChatMessageDTO dto = chatMessageConverter.toDTO(chatMessage);
+                if (!isInternalContextMessage(dto)) {
+                    result.add(chatMessageConverter.toVO(dto));
+                }
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }
@@ -51,16 +53,48 @@ public class ChatMessageFacadeServiceImpl implements ChatMessageFacadeService {
     @Override
     public List<ChatMessageDTO> getChatMessagesBySessionIdRecently(String sessionId, int limit) {
         List<ChatMessage> chatMessages = chatMessageMapper.selectBySessionIdRecently(sessionId, limit);
+        return toVisibleDTOs(chatMessages);
+    }
+
+    @Override
+    public ChatMessageDTO getLatestContextSummary(String sessionId) {
+        ChatMessage chatMessage = chatMessageMapper.selectLatestContextSummary(sessionId);
+        if (chatMessage == null) {
+            return null;
+        }
+        try {
+            return chatMessageConverter.toDTO(chatMessage);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public List<ChatMessageDTO> getContextMessagesAfterLatestSummary(String sessionId, int limit) {
+        List<ChatMessage> chatMessages = chatMessageMapper.selectContextMessagesAfterLatestSummary(sessionId, limit);
+        return toVisibleDTOs(chatMessages);
+    }
+
+    private List<ChatMessageDTO> toVisibleDTOs(List<ChatMessage> chatMessages) {
         List<ChatMessageDTO> result = new ArrayList<>();
         for (ChatMessage chatMessage : chatMessages) {
             try {
                 ChatMessageDTO dto = chatMessageConverter.toDTO(chatMessage);
-                result.add(dto);
+                if (!isInternalContextMessage(dto)) {
+                    result.add(dto);
+                }
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }
         }
         return result;
+    }
+
+    private boolean isInternalContextMessage(ChatMessageDTO dto) {
+        return dto != null
+                && dto.getMetadata() != null
+                && dto.getMetadata().getContextManagement() != null
+                && dto.getMetadata().getContextManagement().isInternalMessage();
     }
 
     @Override

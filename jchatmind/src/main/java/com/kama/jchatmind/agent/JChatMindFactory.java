@@ -17,6 +17,7 @@ import com.kama.jchatmind.model.entity.KnowledgeBase;
 import com.kama.jchatmind.service.ChatMessageFacadeService;
 import com.kama.jchatmind.service.SseService;
 import com.kama.jchatmind.service.ToolFacadeService;
+import com.kama.jchatmind.service.impl.ContextManagementService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -45,6 +46,7 @@ public class JChatMindFactory {
     private final ChatMessageFacadeService chatMessageFacadeService;
     private final ChatMessageConverter chatMessageConverter;
     private final ObjectMapper objectMapper;
+    private final ContextManagementService contextManagementService;
 
     // 运行时 Agent 配置
     private AgentDTO agentConfig;
@@ -59,7 +61,8 @@ public class JChatMindFactory {
             ToolFacadeService toolFacadeService,
             ChatMessageFacadeService chatMessageFacadeService,
             ChatMessageConverter chatMessageConverter,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ContextManagementService contextManagementService
     ) {
         this.chatClientRegistry = chatClientRegistry;
         this.sseService = sseService;
@@ -71,6 +74,7 @@ public class JChatMindFactory {
         this.chatMessageFacadeService = chatMessageFacadeService;
         this.chatMessageConverter = chatMessageConverter;
         this.objectMapper = objectMapper;
+        this.contextManagementService = contextManagementService;
     }
 
     private Agent loadAgent(String agentId) {
@@ -82,7 +86,15 @@ public class JChatMindFactory {
      */
     private List<Message> loadMemory(String chatSessionId) {
         int messageLength = agentConfig.getChatOptions().getMessageLength();
-        List<ChatMessageDTO> chatMessages = chatMessageFacadeService.getChatMessagesBySessionIdRecently(chatSessionId, messageLength);
+        ChatMessageDTO latestSummary = chatMessageFacadeService.getLatestContextSummary(chatSessionId);
+        List<ChatMessageDTO> chatMessages = new ArrayList<>();
+        if (latestSummary != null) {
+            chatMessages.add(latestSummary);
+        }
+        List<ChatMessageDTO> recentMessages = latestSummary == null
+                ? chatMessageFacadeService.getChatMessagesBySessionIdRecently(chatSessionId, messageLength)
+                : chatMessageFacadeService.getContextMessagesAfterLatestSummary(chatSessionId, messageLength);
+        chatMessages.addAll(recentMessages);
         List<Message> memory = new ArrayList<>();
         for (ChatMessageDTO chatMessageDTO : chatMessages) {
             switch (chatMessageDTO.getRole()) {
@@ -97,15 +109,14 @@ public class JChatMindFactory {
                 case ASSISTANT:
                     memory.add(AssistantMessage.builder()
                             .content(chatMessageDTO.getContent())
-                            .toolCalls(chatMessageDTO.getMetadata()
-                                    .getToolCalls())
+                            .toolCalls(chatMessageDTO.getMetadata() == null
+                                    ? List.of()
+                                    : chatMessageDTO.getMetadata().getToolCalls())
                             .build());
                     break;
                 case TOOL:
                     memory.add(ToolResponseMessage.builder()
-                            .responses(List.of(chatMessageDTO
-                                    .getMetadata()
-                                    .getToolResponse()))
+                            .responses(List.of(resolveToolResponse(chatMessageDTO)))
                             .build());
                     break;
                 default:
@@ -117,6 +128,35 @@ public class JChatMindFactory {
             }
         }
         return memory;
+    }
+
+    private ToolResponseMessage.ToolResponse resolveToolResponse(ChatMessageDTO chatMessageDTO) {
+        if (chatMessageDTO.getMetadata() != null && chatMessageDTO.getMetadata().getToolResponse() != null) {
+            return chatMessageDTO.getMetadata().getToolResponse();
+        }
+        return new ToolResponseMessage.ToolResponse(chatMessageDTO.getId(), "tool", chatMessageDTO.getContent());
+    }
+
+    private void maybeCreateConversationSummary(String chatSessionId, ChatClient chatClient) {
+        List<ChatMessageDTO> messagesAfterSummary =
+                chatMessageFacadeService.getContextMessagesAfterLatestSummary(chatSessionId, contextManagementService.summaryScanLimit());
+        if (!contextManagementService.shouldSummarize(messagesAfterSummary)) {
+            return;
+        }
+        List<ChatMessageDTO> messagesToSummarize = contextManagementService.selectMessagesToSummarize(messagesAfterSummary);
+        if (messagesToSummarize.isEmpty()) {
+            return;
+        }
+        ChatMessageDTO summary = contextManagementService.createSummaryMessage(
+                chatSessionId,
+                messagesToSummarize,
+                prompt -> chatClient.prompt()
+                        .system("你是上下文压缩器。请只输出摘要正文，不要输出解释。")
+                        .user(prompt)
+                        .call()
+                        .content()
+        );
+        chatMessageFacadeService.createChatMessage(summary);
     }
 
     private AgentDTO toAgentConfig(Agent agent) {
@@ -233,7 +273,8 @@ public class JChatMindFactory {
                 true,
                 true,
                 null,
-                objectMapper
+                objectMapper,
+                contextManagementService
         );
     }
 
@@ -247,6 +288,8 @@ public class JChatMindFactory {
     public JChatMind create(String agentId, String chatSessionId, String extraSystemPrompt) {
         Agent agent = loadAgent(agentId);
         AgentDTO agentConfig = toAgentConfig(agent);
+        ChatClient chatClient = resolveChatClient(agent.getModel());
+        maybeCreateConversationSummary(chatSessionId, chatClient);
         List<Message> memory = loadMemory(chatSessionId);
 
         // 解析 agent 的支持的知识库

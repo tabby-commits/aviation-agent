@@ -70,6 +70,25 @@
     </select>
 
     <select id="selectBySessionIdRecently" resultMap="BaseResultMap">
+        SELECT *
+        FROM (
+            SELECT id,
+                   session_id,
+                   role,
+                   content,
+                   metadata::text AS metadata,
+                   created_at,
+                   updated_at
+            FROM chat_message
+            WHERE session_id = CAST(#{sessionId} AS uuid)
+              AND COALESCE((metadata -> 'contextManagement' ->> 'internalMessage')::boolean, false) = false
+            ORDER BY created_at DESC
+            LIMIT #{limit}
+        ) recent
+        ORDER BY created_at ASC
+    </select>
+
+    <select id="selectLatestContextSummary" resultMap="BaseResultMap">
         SELECT id,
                session_id,
                role,
@@ -79,7 +98,33 @@
                updated_at
         FROM chat_message
         WHERE session_id = CAST(#{sessionId} AS uuid)
-        ORDER BY created_at
+          AND role = 'system'
+          AND COALESCE((metadata -> 'contextManagement' ->> 'internalMessage')::boolean, false) = true
+          AND metadata -> 'contextManagement' ->> 'compressionType' = 'CONVERSATION_SUMMARY'
+        ORDER BY created_at DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectContextMessagesAfterLatestSummary" resultMap="BaseResultMap">
+        SELECT id,
+               session_id,
+               role,
+               content,
+               metadata::text AS metadata,
+               created_at,
+               updated_at
+        FROM chat_message
+        WHERE session_id = CAST(#{sessionId} AS uuid)
+          AND COALESCE((metadata -> 'contextManagement' ->> 'internalMessage')::boolean, false) = false
+          AND created_at > COALESCE((
+              SELECT MAX(created_at)
+              FROM chat_message
+              WHERE session_id = CAST(#{sessionId} AS uuid)
+                AND role = 'system'
+                AND COALESCE((metadata -> 'contextManagement' ->> 'internalMessage')::boolean, false) = true
+                AND metadata -> 'contextManagement' ->> 'compressionType' = 'CONVERSATION_SUMMARY'
+          ), TIMESTAMP '1970-01-01 00:00:00')
+        ORDER BY created_at ASC
         LIMIT #{limit}
     </select>
 

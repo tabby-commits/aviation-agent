@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 
@@ -31,10 +32,25 @@ public class ChatMessageDTO {
 
     @Data
     @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class MetaData {
         private ToolResponseMessage.ToolResponse toolResponse;
         private List<AssistantMessage.ToolCall> toolCalls;
         private List<ChartArtifact> chartArtifacts;
+        private ContextManagement contextManagement;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ContextManagement {
+        private String compressionType;
+        private Integer originalLength;
+        private Integer retainedLength;
+        private String coveredUntilMessageId;
+        private boolean internalMessage;
     }
 
     @Getter

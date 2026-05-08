@@ -7,6 +7,7 @@ import com.kama.jchatmind.agent.hook.RecoveryBudget;
 import com.kama.jchatmind.agent.hook.RecoveryDecision;
 import com.kama.jchatmind.agent.hook.RecoveryHookHandler;
 import com.kama.jchatmind.agent.hook.ToolRecoverySupport;
+import com.kama.jchatmind.config.ContextManagementProperties;
 import com.kama.jchatmind.converter.ChatMessageConverter;
 import com.kama.jchatmind.agent.search.AgenticSearchContext;
 import com.kama.jchatmind.agent.tools.ChartTools;
@@ -18,6 +19,7 @@ import com.kama.jchatmind.model.response.CreateChatMessageResponse;
 import com.kama.jchatmind.model.vo.ChatMessageVO;
 import com.kama.jchatmind.service.ChatMessageFacadeService;
 import com.kama.jchatmind.service.SseService;
+import com.kama.jchatmind.service.impl.ContextManagementService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -100,6 +102,8 @@ public class JChatMind {
     private ChatMessageFacadeService chatMessageFacadeService;
 
     private ObjectMapper objectMapper;
+
+    private ContextManagementService contextManagementService;
 
     private String model;
 
@@ -210,6 +214,7 @@ public class JChatMind {
         this.chatMessageFacadeService = chatMessageFacadeService;
         this.chatMessageConverter = chatMessageConverter;
         this.objectMapper = objectMapper;
+        this.contextManagementService = new ContextManagementService(new ContextManagementProperties());
         this.role = role == null ? AgentRole.MAIN : role;
         this.persistMessages = persistMessages;
         this.emitSse = emitSse;
@@ -240,6 +245,35 @@ public class JChatMind {
     }
 
     // 打印工具调用信息
+    public JChatMind(String agentId,
+                     String name,
+                     String description,
+                     String systemPrompt,
+                     String model,
+                     ChatClient chatClient,
+                     Integer maxMessages,
+                     List<Message> memory,
+                     List<ToolCallback> availableTools,
+                     List<KnowledgeBaseDTO> availableKbs,
+                     String chatSessionId,
+                     SseService sseService,
+                     ChatMessageFacadeService chatMessageFacadeService,
+                     ChatMessageConverter chatMessageConverter,
+                     AgentRole role,
+                     boolean persistMessages,
+                     boolean emitSse,
+                     Integer maxSteps,
+                     ObjectMapper objectMapper,
+                     ContextManagementService contextManagementService
+    ) {
+        this(agentId, name, description, systemPrompt, model, chatClient, maxMessages, memory, availableTools,
+                availableKbs, chatSessionId, sseService, chatMessageFacadeService, chatMessageConverter,
+                role, persistMessages, emitSse, maxSteps, objectMapper);
+        if (contextManagementService != null) {
+            this.contextManagementService = contextManagementService;
+        }
+    }
+
     private void logToolCalls(List<AssistantMessage.ToolCall> toolCalls) {
         if (toolCalls == null || toolCalls.isEmpty()) {
             log.info("\n\n[ToolCalling] 无工具调用");
@@ -292,25 +326,38 @@ public class JChatMind {
             pendingChatMessages.add(chatMessageDTO);
         } else if (message instanceof ToolResponseMessage toolResponseMessage) {
             // 持久化 ToolResponseMessage
-            for (ToolResponseMessage.ToolResponse toolResponse : toolResponseMessage.getResponses()) {
-                ChatMessageDTO chatMessageDTO = builder.role(ChatMessageDTO.RoleType.TOOL)
-                        .content(toolResponse.responseData())
-                        .sessionId(this.chatSessionId)
-                        .metadata(ChatMessageDTO.MetaData.builder()
-                                .toolResponse(toolResponse)
-                                .chartArtifacts(extractChartArtifacts(toolResponse))
-                                .build())
-                        .build();
-                CreateChatMessageResponse chatMessage = chatMessageFacadeService.createChatMessage(chatMessageDTO);
-                chatMessageDTO.setId(chatMessage.getChatMessageId());
-                pendingChatMessages.add(chatMessageDTO);
-            }
+            saveManagedToolResponseMessage(contextManagementService.manageToolResponseMessage(toolResponseMessage));
         } else {
             throw new IllegalArgumentException("不支持的 Message 类型: " + message.getClass().getName());
         }
     }
 
-    // 刷新 pendingMessages, 将数据通过 sse 发送给前端
+    private void saveManagedToolResponseMessage(ContextManagementService.ManagedToolResponseMessage managedMessage) {
+        if (!persistMessages || managedMessage == null || managedMessage.message() == null) {
+            return;
+        }
+        for (ToolResponseMessage.ToolResponse toolResponse : managedMessage.message().getResponses()) {
+            ChatMessageDTO.MetaData.MetaDataBuilder metadataBuilder = ChatMessageDTO.MetaData.builder()
+                    .toolResponse(toolResponse)
+                    .chartArtifacts(extractChartArtifacts(toolResponse));
+            ChatMessageDTO.ContextManagement contextManagement =
+                    managedMessage.metadataByResponseId().get(toolResponse.id());
+            if (contextManagement != null) {
+                metadataBuilder.contextManagement(contextManagement);
+            }
+            ChatMessageDTO chatMessageDTO = ChatMessageDTO.builder()
+                    .role(ChatMessageDTO.RoleType.TOOL)
+                    .content(toolResponse.responseData())
+                    .sessionId(this.chatSessionId)
+                    .metadata(metadataBuilder.build())
+                    .build();
+            CreateChatMessageResponse chatMessage = chatMessageFacadeService.createChatMessage(chatMessageDTO);
+            chatMessageDTO.setId(chatMessage.getChatMessageId());
+            pendingChatMessages.add(chatMessageDTO);
+        }
+    }
+
+    // 从图表工具返回中提取可前端复用的图表元数据
     private List<ChartArtifact> extractChartArtifacts(ToolResponseMessage.ToolResponse toolResponse) {
         if (objectMapper == null || toolResponse == null || !ChartTools.TOOL_NAME.equals(toolResponse.name())) {
             return null;
@@ -373,7 +420,7 @@ public class JChatMind {
         // 又能够避免将 thinkPrompt 加入到聊天记录中
         Prompt prompt = Prompt.builder()
                 .chatOptions(this.chatOptions)
-                .messages(this.chatMemory.get(this.chatSessionId))
+                .messages(contextManagementService.applyPromptBudget(this.chatMemory.get(this.chatSessionId)))
                 .build();
 
         this.lastChatResponse = this.chatClient
@@ -414,7 +461,7 @@ public class JChatMind {
         }
 
         Prompt prompt = Prompt.builder()
-                .messages(this.chatMemory.get(this.chatSessionId))
+                .messages(contextManagementService.applyPromptBudget(this.chatMemory.get(this.chatSessionId)))
                 .chatOptions(this.chatOptions)
                 .build();
 
@@ -425,9 +472,11 @@ public class JChatMind {
             toolExecutionResult = toolCallingManager.executeToolCalls(prompt, this.lastChatResponse);
         } catch (Exception e) {
             ToolResponseMessage recovered = recoverToolExecutionError(e);
+            ContextManagementService.ManagedToolResponseMessage managed =
+                    contextManagementService.manageToolResponseMessage(recovered);
             this.chatMemory.add(this.chatSessionId, this.lastThinkAssistantMessage);
-            this.chatMemory.add(this.chatSessionId, recovered);
-            saveMessage(recovered);
+            this.chatMemory.add(this.chatSessionId, managed.message());
+            saveManagedToolResponseMessage(managed);
             refreshPendingMessages();
             return;
         } finally {
@@ -438,6 +487,9 @@ public class JChatMind {
                 .conversationHistory()
                 .get(toolExecutionResult.conversationHistory().size() - 1);
         toolResponseMessage = recoverEmptyToolResponses(toolResponseMessage);
+        ContextManagementService.ManagedToolResponseMessage managedToolResponseMessage =
+                contextManagementService.manageToolResponseMessage(toolResponseMessage);
+        toolResponseMessage = managedToolResponseMessage.message();
 
         List<Message> conversationHistory = new ArrayList<>(toolExecutionResult.conversationHistory());
         conversationHistory.set(conversationHistory.size() - 1, toolResponseMessage);
@@ -452,7 +504,7 @@ public class JChatMind {
         log.info("工具调用结果：{}", collect);
 
         // 保存工具调用
-        saveMessage(toolResponseMessage);
+        saveManagedToolResponseMessage(managedToolResponseMessage);
         refreshPendingMessages();
 
         if (toolResponseMessage.getResponses()
@@ -610,7 +662,7 @@ public class JChatMind {
         try {
             Prompt prompt = Prompt.builder()
                     .chatOptions(this.chatOptions)
-                    .messages(this.chatMemory.get(this.chatSessionId))
+                    .messages(contextManagementService.applyPromptBudget(this.chatMemory.get(this.chatSessionId)))
                     .build();
             String synthesisSystem = """
                     你已经完成全部工具检索与委派。请仅根据当前对话中的用户问题与工具返回内容，写出「最终给用户看的」完整答复：

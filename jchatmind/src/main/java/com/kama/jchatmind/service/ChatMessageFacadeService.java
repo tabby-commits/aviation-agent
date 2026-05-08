@@ -13,6 +13,10 @@ public interface ChatMessageFacadeService {
 
     List<ChatMessageDTO> getChatMessagesBySessionIdRecently(String sessionId, int limit);
 
+    ChatMessageDTO getLatestContextSummary(String sessionId);
+
+    List<ChatMessageDTO> getContextMessagesAfterLatestSummary(String sessionId, int limit);
+
     CreateChatMessageResponse createChatMessage(CreateChatMessageRequest request);
 
     CreateChatMessageResponse createChatMessage(ChatMessageDTO chatMessageDTO);
