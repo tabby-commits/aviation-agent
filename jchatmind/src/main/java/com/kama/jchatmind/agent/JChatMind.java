@@ -1,6 +1,13 @@
 package com.kama.jchatmind.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kama.jchatmind.agent.hook.AgentHook;
+import com.kama.jchatmind.agent.hook.AgentHookContext;
+import com.kama.jchatmind.agent.hook.RecoveryBudget;
+import com.kama.jchatmind.agent.hook.RecoveryDecision;
+import com.kama.jchatmind.agent.hook.RecoveryHookHandler;
+import com.kama.jchatmind.agent.hook.ToolRecoverySupport;
+import com.kama.jchatmind.config.ContextManagementProperties;
 import com.kama.jchatmind.converter.ChatMessageConverter;
 import com.kama.jchatmind.agent.search.AgenticSearchContext;
 import com.kama.jchatmind.agent.tools.ChartTools;
@@ -12,6 +19,7 @@ import com.kama.jchatmind.model.response.CreateChatMessageResponse;
 import com.kama.jchatmind.model.vo.ChatMessageVO;
 import com.kama.jchatmind.service.ChatMessageFacadeService;
 import com.kama.jchatmind.service.SseService;
+import com.kama.jchatmind.service.impl.ContextManagementService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -28,7 +36,10 @@ import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -92,6 +103,8 @@ public class JChatMind {
 
     private ObjectMapper objectMapper;
 
+    private ContextManagementService contextManagementService;
+
     private String model;
 
     private AgentRole role = AgentRole.MAIN;
@@ -101,6 +114,16 @@ public class JChatMind {
     private boolean emitSse = true;
 
     private int maxSteps = DEFAULT_MAX_STEPS;
+
+    private AgentHook agentHook;
+
+    private ToolRecoverySupport toolRecoverySupport;
+
+    private int currentStepIndex;
+
+    private int finalAnswerSyntheses;
+
+    private final Map<String, Integer> toolRetryCounts = new HashMap<>();
 
     // 最后一次的 ChatResponse
     private ChatResponse lastChatResponse;
@@ -191,10 +214,13 @@ public class JChatMind {
         this.chatMessageFacadeService = chatMessageFacadeService;
         this.chatMessageConverter = chatMessageConverter;
         this.objectMapper = objectMapper;
+        this.contextManagementService = new ContextManagementService(new ContextManagementProperties());
         this.role = role == null ? AgentRole.MAIN : role;
         this.persistMessages = persistMessages;
         this.emitSse = emitSse;
         this.maxSteps = maxSteps == null ? DEFAULT_MAX_STEPS : maxSteps;
+        this.agentHook = new RecoveryHookHandler();
+        this.toolRecoverySupport = new ToolRecoverySupport(this.agentHook);
 
         this.agentState = AgentState.IDLE;
 
@@ -219,6 +245,35 @@ public class JChatMind {
     }
 
     // 打印工具调用信息
+    public JChatMind(String agentId,
+                     String name,
+                     String description,
+                     String systemPrompt,
+                     String model,
+                     ChatClient chatClient,
+                     Integer maxMessages,
+                     List<Message> memory,
+                     List<ToolCallback> availableTools,
+                     List<KnowledgeBaseDTO> availableKbs,
+                     String chatSessionId,
+                     SseService sseService,
+                     ChatMessageFacadeService chatMessageFacadeService,
+                     ChatMessageConverter chatMessageConverter,
+                     AgentRole role,
+                     boolean persistMessages,
+                     boolean emitSse,
+                     Integer maxSteps,
+                     ObjectMapper objectMapper,
+                     ContextManagementService contextManagementService
+    ) {
+        this(agentId, name, description, systemPrompt, model, chatClient, maxMessages, memory, availableTools,
+                availableKbs, chatSessionId, sseService, chatMessageFacadeService, chatMessageConverter,
+                role, persistMessages, emitSse, maxSteps, objectMapper);
+        if (contextManagementService != null) {
+            this.contextManagementService = contextManagementService;
+        }
+    }
+
     private void logToolCalls(List<AssistantMessage.ToolCall> toolCalls) {
         if (toolCalls == null || toolCalls.isEmpty()) {
             log.info("\n\n[ToolCalling] 无工具调用");
@@ -271,25 +326,38 @@ public class JChatMind {
             pendingChatMessages.add(chatMessageDTO);
         } else if (message instanceof ToolResponseMessage toolResponseMessage) {
             // 持久化 ToolResponseMessage
-            for (ToolResponseMessage.ToolResponse toolResponse : toolResponseMessage.getResponses()) {
-                ChatMessageDTO chatMessageDTO = builder.role(ChatMessageDTO.RoleType.TOOL)
-                        .content(toolResponse.responseData())
-                        .sessionId(this.chatSessionId)
-                        .metadata(ChatMessageDTO.MetaData.builder()
-                                .toolResponse(toolResponse)
-                                .chartArtifacts(extractChartArtifacts(toolResponse))
-                                .build())
-                        .build();
-                CreateChatMessageResponse chatMessage = chatMessageFacadeService.createChatMessage(chatMessageDTO);
-                chatMessageDTO.setId(chatMessage.getChatMessageId());
-                pendingChatMessages.add(chatMessageDTO);
-            }
+            saveManagedToolResponseMessage(contextManagementService.manageToolResponseMessage(toolResponseMessage));
         } else {
             throw new IllegalArgumentException("不支持的 Message 类型: " + message.getClass().getName());
         }
     }
 
-    // 刷新 pendingMessages, 将数据通过 sse 发送给前端
+    private void saveManagedToolResponseMessage(ContextManagementService.ManagedToolResponseMessage managedMessage) {
+        if (!persistMessages || managedMessage == null || managedMessage.message() == null) {
+            return;
+        }
+        for (ToolResponseMessage.ToolResponse toolResponse : managedMessage.message().getResponses()) {
+            ChatMessageDTO.MetaData.MetaDataBuilder metadataBuilder = ChatMessageDTO.MetaData.builder()
+                    .toolResponse(toolResponse)
+                    .chartArtifacts(extractChartArtifacts(toolResponse));
+            ChatMessageDTO.ContextManagement contextManagement =
+                    managedMessage.metadataByResponseId().get(toolResponse.id());
+            if (contextManagement != null) {
+                metadataBuilder.contextManagement(contextManagement);
+            }
+            ChatMessageDTO chatMessageDTO = ChatMessageDTO.builder()
+                    .role(ChatMessageDTO.RoleType.TOOL)
+                    .content(toolResponse.responseData())
+                    .sessionId(this.chatSessionId)
+                    .metadata(metadataBuilder.build())
+                    .build();
+            CreateChatMessageResponse chatMessage = chatMessageFacadeService.createChatMessage(chatMessageDTO);
+            chatMessageDTO.setId(chatMessage.getChatMessageId());
+            pendingChatMessages.add(chatMessageDTO);
+        }
+    }
+
+    // 从图表工具返回中提取可前端复用的图表元数据
     private List<ChartArtifact> extractChartArtifacts(ToolResponseMessage.ToolResponse toolResponse) {
         if (objectMapper == null || toolResponse == null || !ChartTools.TOOL_NAME.equals(toolResponse.name())) {
             return null;
@@ -352,7 +420,7 @@ public class JChatMind {
         // 又能够避免将 thinkPrompt 加入到聊天记录中
         Prompt prompt = Prompt.builder()
                 .chatOptions(this.chatOptions)
-                .messages(this.chatMemory.get(this.chatSessionId))
+                .messages(contextManagementService.applyPromptBudget(this.chatMemory.get(this.chatSessionId)))
                 .build();
 
         this.lastChatResponse = this.chatClient
@@ -381,7 +449,7 @@ public class JChatMind {
         logToolCalls(toolCalls);
 
         // 如果工具调用不为空，则进入执行阶段
-        return !toolCalls.isEmpty();
+        return toolCalls != null && !toolCalls.isEmpty();
     }
 
     // 执行
@@ -393,24 +461,40 @@ public class JChatMind {
         }
 
         Prompt prompt = Prompt.builder()
-                .messages(this.chatMemory.get(this.chatSessionId))
+                .messages(contextManagementService.applyPromptBudget(this.chatMemory.get(this.chatSessionId)))
                 .chatOptions(this.chatOptions)
                 .build();
 
         ToolExecutionResult toolExecutionResult;
         try {
+            emitBeforeToolCalls();
             AgenticSearchContext.set(this.chatSessionId, this.model);
             toolExecutionResult = toolCallingManager.executeToolCalls(prompt, this.lastChatResponse);
+        } catch (Exception e) {
+            ToolResponseMessage recovered = recoverToolExecutionError(e);
+            ContextManagementService.ManagedToolResponseMessage managed =
+                    contextManagementService.manageToolResponseMessage(recovered);
+            this.chatMemory.add(this.chatSessionId, this.lastThinkAssistantMessage);
+            this.chatMemory.add(this.chatSessionId, managed.message());
+            saveManagedToolResponseMessage(managed);
+            refreshPendingMessages();
+            return;
         } finally {
             AgenticSearchContext.clear();
         }
 
-        this.chatMemory.clear(this.chatSessionId);
-        this.chatMemory.add(this.chatSessionId, toolExecutionResult.conversationHistory());
-
         ToolResponseMessage toolResponseMessage = (ToolResponseMessage) toolExecutionResult
                 .conversationHistory()
                 .get(toolExecutionResult.conversationHistory().size() - 1);
+        toolResponseMessage = recoverEmptyToolResponses(toolResponseMessage);
+        ContextManagementService.ManagedToolResponseMessage managedToolResponseMessage =
+                contextManagementService.manageToolResponseMessage(toolResponseMessage);
+        toolResponseMessage = managedToolResponseMessage.message();
+
+        List<Message> conversationHistory = new ArrayList<>(toolExecutionResult.conversationHistory());
+        conversationHistory.set(conversationHistory.size() - 1, toolResponseMessage);
+        this.chatMemory.clear(this.chatSessionId);
+        this.chatMemory.add(this.chatSessionId, conversationHistory);
 
         String collect = toolResponseMessage.getResponses()
                 .stream()
@@ -420,7 +504,7 @@ public class JChatMind {
         log.info("工具调用结果：{}", collect);
 
         // 保存工具调用
-        saveMessage(toolResponseMessage);
+        saveManagedToolResponseMessage(managedToolResponseMessage);
         refreshPendingMessages();
 
         if (toolResponseMessage.getResponses()
@@ -431,6 +515,126 @@ public class JChatMind {
             }
             this.agentState = AgentState.FINISHED;
             log.info("任务结束");
+        }
+    }
+
+    private void emitBeforeToolCalls() {
+        if (lastThinkAssistantMessage == null || lastThinkAssistantMessage.getToolCalls() == null) {
+            return;
+        }
+        for (AssistantMessage.ToolCall toolCall : lastThinkAssistantMessage.getToolCalls()) {
+            agentHook.beforeToolCall(baseHookContext(
+                    toolCall.name(),
+                    toolCall.arguments(),
+                    null,
+                    retryCount(toolCall.name())
+            ));
+            emitHookEvent("before_tool_call", toolCall.name(), null);
+        }
+    }
+
+    private ToolResponseMessage recoverEmptyToolResponses(ToolResponseMessage toolResponseMessage) {
+        ToolResponseMessage recovered = ToolResponseMessage.builder()
+                .responses(toolResponseMessage.getResponses()
+                        .stream()
+                        .map(response -> toolRecoverySupport.recoverEmptyResponse(
+                                response,
+                                baseHookContext(response.name(), null, null, retryCount(response.name()))
+                        ))
+                        .toList())
+                .build();
+        for (ToolResponseMessage.ToolResponse response : recovered.getResponses()) {
+            agentHook.afterToolCall(baseHookContext(
+                    response.name(),
+                    null,
+                    response.responseData(),
+                    retryCount(response.name())
+            ));
+            if (toolRecoverySupport.isEmptyResult(findOriginalResponse(toolResponseMessage, response.id()))) {
+                int retryCount = retryCount(response.name());
+                if (retryCount < RecoveryBudget.defaults().maxToolRetries()) {
+                    toolRetryCounts.put(response.name(), retryCount + 1);
+                }
+                emitHookEvent("tool_empty_result", response.name(), null);
+            }
+        }
+        return recovered;
+    }
+
+    private String findOriginalResponse(ToolResponseMessage message, String callId) {
+        return message.getResponses()
+                .stream()
+                .filter(response -> Objects.equals(response.id(), callId))
+                .map(ToolResponseMessage.ToolResponse::responseData)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private ToolResponseMessage recoverToolExecutionError(Exception e) {
+        if (lastThinkAssistantMessage == null
+                || lastThinkAssistantMessage.getToolCalls() == null
+                || lastThinkAssistantMessage.getToolCalls().isEmpty()) {
+            int retryCount = retryCount("unknownTool");
+            if (retryCount < RecoveryBudget.defaults().maxToolRetries()) {
+                toolRetryCounts.put("unknownTool", retryCount + 1);
+            }
+            return toolRecoverySupport.errorResponse(
+                    null,
+                    "unknownTool",
+                    e,
+                    baseHookContext("unknownTool", null, null, retryCount)
+            );
+        }
+        List<ToolResponseMessage.ToolResponse> responses = new ArrayList<>();
+        for (AssistantMessage.ToolCall toolCall : lastThinkAssistantMessage.getToolCalls()) {
+            String toolName = toolCall.name();
+            int retryCount = retryCount(toolName);
+            responses.add(toolRecoverySupport.errorToolResponse(
+                    toolCall.id(),
+                    toolName,
+                    e,
+                    baseHookContext(toolName, toolCall.arguments(), null, retryCount)
+            ));
+            if (retryCount < RecoveryBudget.defaults().maxToolRetries()) {
+                toolRetryCounts.put(toolName, retryCount + 1);
+            }
+            emitHookEvent("tool_error", toolName, null);
+        }
+        return ToolResponseMessage.builder().responses(responses).build();
+    }
+
+    private int retryCount(String toolName) {
+        return toolRetryCounts.getOrDefault(toolName, 0);
+    }
+
+    private AgentHookContext baseHookContext(String toolName, String toolArguments, Object rawResult, int retryCount) {
+        return AgentHookContext.builder()
+                .sessionId(this.chatSessionId)
+                .agentRole(this.role)
+                .stepIndex(this.currentStepIndex)
+                .toolName(toolName)
+                .toolArguments(toolArguments)
+                .rawResult(rawResult)
+                .retryCount(retryCount)
+                .recoveryBudget(RecoveryBudget.defaults())
+                .build();
+    }
+
+    private void emitHookEvent(String stage, String toolName, String taskId) {
+        if (!emitSse || sseService == null || !StringUtils.hasText(chatSessionId)) {
+            return;
+        }
+        try {
+            sseService.send(chatSessionId, SseMessage.builder()
+                    .type(SseMessage.Type.AGENT_HOOK_RECOVERY)
+                    .payload(SseMessage.Payload.builder()
+                            .stage(stage)
+                            .toolName(toolName)
+                            .taskId(taskId)
+                            .build())
+                    .build());
+        } catch (Exception ignored) {
+            // Hook telemetry must not fail the agent.
         }
     }
 
@@ -449,10 +653,16 @@ public class JChatMind {
      * 在仅过渡语 + terminate 等场景下，基于当前完整对话（含工具返回）补写一条无工具的最终用户可见答复。
      */
     private void synthesizeMainAgentFinalAnswer() {
+        if (finalAnswerSyntheses >= RecoveryBudget.defaults().maxFinalAnswerSyntheses()) {
+            return;
+        }
+        RecoveryDecision decision = agentHook.beforeFinalAnswer(baseHookContext(null, null, null, finalAnswerSyntheses));
+        emitHookEvent("before_final_answer", null, null);
+        finalAnswerSyntheses++;
         try {
             Prompt prompt = Prompt.builder()
                     .chatOptions(this.chatOptions)
-                    .messages(this.chatMemory.get(this.chatSessionId))
+                    .messages(contextManagementService.applyPromptBudget(this.chatMemory.get(this.chatSessionId)))
                     .build();
             String synthesisSystem = """
                     你已经完成全部工具检索与委派。请仅根据当前对话中的用户问题与工具返回内容，写出「最终给用户看的」完整答复：
@@ -483,7 +693,7 @@ public class JChatMind {
             this.chatMemory.add(this.chatSessionId, out);
             refreshPendingMessages();
         } catch (Exception e) {
-            log.warn("Main agent final-answer synthesis failed: {}", e.getMessage());
+            log.warn("Main agent final-answer synthesis failed after hook {}: {}", decision.action(), e.getMessage());
         }
     }
 
@@ -506,12 +716,15 @@ public class JChatMind {
             for (int i = 0; i < maxSteps && agentState != AgentState.FINISHED; i++) {
                 // 当前步骤，用于实现 Agent Loop
                 int currentStep = i + 1;
+                this.currentStepIndex = currentStep;
                 step();
                 if (currentStep >= maxSteps) {
                     agentState = AgentState.FINISHED;
                     log.warn("Max steps reached, stopping agent");
                 }
             }
+            agentHook.onTaskCompleted(baseHookContext(null, null, null, 0));
+            emitHookEvent("task_completed", null, null);
             agentState = AgentState.FINISHED;
         } catch (Exception e) {
             agentState = AgentState.ERROR;

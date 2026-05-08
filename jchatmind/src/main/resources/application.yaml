@@ -45,6 +45,14 @@ document:
     base-path: ./data/documents
 
 jchatmind:
+  context-management:
+    enabled: true
+    tool-result-max-chars: 8000
+    tool-result-head-chars: 3500
+    tool-result-tail-chars: 3500
+    summary-trigger-messages: 16
+    summary-keep-recent-messages: 8
+    max-prompt-chars: 60000
   skill:
     enabled: true
     scan-directories:
@@ -75,6 +83,7 @@ jchatmind:
       default-timeout-seconds: 45
       global-timeout-seconds: 60
       per-user-max-parallel: 6
+      max-sub-agent-redelegations: 1   # 单个子任务首次 runSubAgent 失败后，hook 允许再执行的次数上限
     sub-agent:
       kb-wide-top-k: 30       # SubAgentKnowledgeTool 默认 topK
       kb-wide-top-k-max: 60

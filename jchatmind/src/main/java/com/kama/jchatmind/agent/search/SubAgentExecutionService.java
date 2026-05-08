@@ -1,5 +1,12 @@
 package com.kama.jchatmind.agent.search;
 
+import com.kama.jchatmind.agent.AgentRole;
+import com.kama.jchatmind.agent.hook.AgentHook;
+import com.kama.jchatmind.agent.hook.AgentHookContext;
+import com.kama.jchatmind.agent.hook.RecoveryAction;
+import com.kama.jchatmind.agent.hook.RecoveryBudget;
+import com.kama.jchatmind.agent.hook.RecoveryDecision;
+import com.kama.jchatmind.agent.hook.RecoveryHookHandler;
 import com.kama.jchatmind.agent.search.model.AggregateStats;
 import com.kama.jchatmind.agent.search.model.DelegationResult;
 import com.kama.jchatmind.agent.search.model.GlobalPolicy;
@@ -13,6 +20,7 @@ import com.kama.jchatmind.config.AgenticSearchProperties;
 import com.kama.jchatmind.message.SseMessage;
 import com.kama.jchatmind.search.SearchService;
 import com.kama.jchatmind.service.SseService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -32,17 +40,29 @@ public class SubAgentExecutionService {
     private final SearchService searchService;
     private final SseService sseService;
     private final Executor executor;
+    private final AgentHook agentHook;
 
+    @Autowired
     public SubAgentExecutionService(SubAgentRuntimeFactory runtimeFactory,
                                     AgenticSearchProperties properties,
                                     SearchService searchService,
                                     SseService sseService,
+                                    AgentHook agentHook,
                                     @Qualifier("subAgentTaskExecutor") Executor executor) {
         this.runtimeFactory = runtimeFactory;
         this.properties = properties;
         this.searchService = searchService;
         this.sseService = sseService;
         this.executor = executor;
+        this.agentHook = agentHook == null ? new RecoveryHookHandler() : agentHook;
+    }
+
+    public SubAgentExecutionService(SubAgentRuntimeFactory runtimeFactory,
+                                    AgenticSearchProperties properties,
+                                    SearchService searchService,
+                                    SseService sseService,
+                                    @Qualifier("subAgentTaskExecutor") Executor executor) {
+        this(runtimeFactory, properties, searchService, sseService, new RecoveryHookHandler(), executor);
     }
 
     public DelegationResult execute(List<SubTaskSpec> tasks,
@@ -51,11 +71,15 @@ public class SubAgentExecutionService {
                                     String model) {
         long started = System.currentTimeMillis();
         if (tasks == null || tasks.isEmpty()) {
-            return new DelegationResult(List.of(), List.of(new SubTaskFailure(
-                    "global",
-                    SearchDelegationErrorCode.SEARCH_DELEGATION_INVALID_INPUT.name(),
-                    "tasks 不能为空"
-            )), new AggregateStats(0, new TokenUsage(0, 0)));
+            return new DelegationResult(
+                    List.of(),
+                    List.of(new SubTaskFailure(
+                            "global",
+                            SearchDelegationErrorCode.SEARCH_DELEGATION_INVALID_INPUT.name(),
+                            "tasks 不能为空"
+                    )),
+                    new AggregateStats(0, new TokenUsage(0, 0)),
+                    null);
         }
 
         emit(parentSessionId, SseMessage.Type.AGENTIC_DELEGATING, "delegating", null, null, tasks.size(), null);
@@ -97,8 +121,8 @@ public class SubAgentExecutionService {
         return new DelegationResult(
                 results,
                 failures,
-                new AggregateStats(System.currentTimeMillis() - started, new TokenUsage(0, 0))
-        );
+                new AggregateStats(System.currentTimeMillis() - started, new TokenUsage(0, 0)),
+                null);
     }
 
     private TaskOutcome runWithPermit(Semaphore semaphore, SubTaskSpec spec, String parentSessionId, String model) {
@@ -114,26 +138,64 @@ public class SubAgentExecutionService {
     }
 
     private TaskOutcome runOne(SubTaskSpec spec, String parentSessionId, String model) {
+        int retryCount = 0;
+        SubTaskSpec normalizedSpec;
         try {
-            SubTaskSpec normalizedSpec = normalize(spec);
+            normalizedSpec = normalize(spec);
             validate(normalizedSpec);
-            FallbackDecision fallback = applyFallback(normalizedSpec, parentSessionId);
-            emit(parentSessionId, SseMessage.Type.AGENTIC_SUBAGENT_PROGRESS, "running", 1, maxSteps(fallback.spec()), null, spec.taskId());
-            SubTaskResult result = runtimeFactory.runSubAgent(
-                    fallback.spec(),
-                    parentSessionId,
-                    model,
-                    maxSteps(fallback.spec()),
-                    fallback.fallback()
-            );
-            return new TaskOutcome(result, null);
         } catch (Exception e) {
             String code = classify(e);
-            return new TaskOutcome(null, new SubTaskFailure(spec.taskId(), code,
-                    e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
-        } finally {
-            emit(parentSessionId, SseMessage.Type.AGENTIC_SUBAGENT_PROGRESS, "finished", 1, 1, null, spec.taskId());
+            return new TaskOutcome(null, new SubTaskFailure(taskId(spec), code,
+                    message(e)));
         }
+
+        while (true) {
+            try {
+                FallbackDecision fallback = applyFallback(normalizedSpec, parentSessionId);
+                emit(parentSessionId, SseMessage.Type.AGENTIC_SUBAGENT_PROGRESS, "running", 1, maxSteps(fallback.spec()), null, taskId(spec));
+                SubTaskResult result = runtimeFactory.runSubAgent(
+                        fallback.spec(),
+                        parentSessionId,
+                        model,
+                        maxSteps(fallback.spec()),
+                        fallback.fallback()
+                );
+                return new TaskOutcome(result, null);
+            } catch (Exception e) {
+                RecoveryBudget recoveryBudget = delegationRecoveryBudget();
+                RecoveryDecision decision = agentHook.onSubAgentFailure(AgentHookContext.builder()
+                        .sessionId(parentSessionId)
+                        .agentRole(AgentRole.MAIN)
+                        .taskId(taskId(spec))
+                        .error(e)
+                        .retryCount(retryCount)
+                        .recoveryBudget(recoveryBudget)
+                        .build());
+                boolean hookWantsRedelegate = decision.action() == RecoveryAction.REDELEGATE_SUBTASK;
+                boolean underHardCap = retryCount < Math.max(0, properties.getDelegation().getMaxSubAgentRedelegations());
+                if (hookWantsRedelegate && underHardCap) {
+                    emit(parentSessionId, SseMessage.Type.AGENTIC_FALLBACK, "redelegating", null, null, null, taskId(spec));
+                    retryCount++;
+                    continue;
+                }
+                String code = classify(e);
+                String msg = message(e);
+                if (hookWantsRedelegate && !underHardCap) {
+                    msg = msg + "；已达子任务检索重试上限，请主 Agent 基于已有结果降级综述，勿再次派发同一子任务。";
+                }
+                return new TaskOutcome(null, new SubTaskFailure(taskId(spec), code, msg));
+            } finally {
+                emit(parentSessionId, SseMessage.Type.AGENTIC_SUBAGENT_PROGRESS, "finished", 1, 1, null, taskId(spec));
+            }
+        }
+    }
+
+    private String taskId(SubTaskSpec spec) {
+        return spec == null ? "unknown" : spec.taskId();
+    }
+
+    private String message(Exception e) {
+        return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
     }
 
     private SubTaskSpec normalize(SubTaskSpec spec) {
@@ -252,5 +314,11 @@ public class SubAgentExecutionService {
     }
 
     private record FallbackDecision(SubTaskSpec spec, String fallback) {
+    }
+
+    private RecoveryBudget delegationRecoveryBudget() {
+        int cap = Math.max(0, properties.getDelegation().getMaxSubAgentRedelegations());
+        RecoveryBudget d = RecoveryBudget.defaults();
+        return new RecoveryBudget(d.maxToolRetries(), cap, d.maxFinalAnswerSyntheses());
     }
 }

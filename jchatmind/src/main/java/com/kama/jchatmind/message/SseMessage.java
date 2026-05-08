@@ -67,6 +67,7 @@ public class SseMessage {
         AGENTIC_FALLBACK,
         /** 所有子任务执行完毕，聚合结果已返回主 Agent */
         AGENTIC_DONE,
+        AGENT_HOOK_RECOVERY,
         CHART_GENERATED,
     }
 }
