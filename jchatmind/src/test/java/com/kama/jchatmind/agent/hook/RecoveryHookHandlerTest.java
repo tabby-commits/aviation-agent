@@ -63,4 +63,22 @@ class RecoveryHookHandlerTest {
         assertThat(decision.action()).isEqualTo(RecoveryAction.REDELEGATE_SUBTASK);
         assertThat(decision.observation()).contains("task-1").contains("redelegate");
     }
+
+    @Test
+    void subAgentFailureAfterBudgetExhaustedSynthesizes() {
+        AgentHookContext context = AgentHookContext.builder()
+                .sessionId("session-1")
+                .agentRole(AgentRole.MAIN)
+                .stepIndex(1)
+                .taskId("task-1")
+                .error(new RuntimeException("still bad"))
+                .retryCount(1)
+                .recoveryBudget(RecoveryBudget.defaults())
+                .build();
+
+        RecoveryDecision decision = handler.onSubAgentFailure(context);
+
+        assertThat(decision.action()).isEqualTo(RecoveryAction.SYNTHESIZE_FINAL_ANSWER);
+        assertThat(decision.observation()).contains("exhausted");
+    }
 }

@@ -4,6 +4,9 @@ import com.kama.jchatmind.agent.search.model.AggregateStats;
 import com.kama.jchatmind.agent.search.model.DelegationResult;
 import com.kama.jchatmind.agent.search.model.GlobalPolicy;
 import com.kama.jchatmind.agent.search.model.SearchPolicy;
+import com.kama.jchatmind.agent.hook.AgentHook;
+import com.kama.jchatmind.agent.hook.RecoveryAction;
+import com.kama.jchatmind.agent.hook.RecoveryDecision;
 import com.kama.jchatmind.agent.search.model.SubTaskResult;
 import com.kama.jchatmind.agent.search.model.SubTaskSpec;
 import com.kama.jchatmind.config.AgenticSearchProperties;
@@ -11,17 +14,20 @@ import com.kama.jchatmind.search.SearchService;
 import com.kama.jchatmind.service.SseService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 class SubAgentExecutionServiceTest {
 
@@ -116,8 +122,44 @@ class SubAgentExecutionServiceTest {
 
         assertThat(result.results()).extracting(SubTaskResult::taskId).containsExactly("repairable");
         assertThat(result.failures()).isEmpty();
-        verify(runtimeFactory, org.mockito.Mockito.times(2))
+        verify(runtimeFactory, times(2))
                 .runSubAgent(any(), any(), any(), anyInt(), any());
+    }
+
+    @Test
+    void failedSubAgentTwiceReturnsFailure() {
+        when(searchService.isAvailable()).thenReturn(true);
+        when(runtimeFactory.runSubAgent(any(), any(), any(), anyInt(), any()))
+                .thenThrow(new IllegalStateException("bad json"));
+        SubAgentExecutionService service = service();
+
+        DelegationResult result = service.execute(List.of(task("fragile")),
+                new GlobalPolicy(1, 5), "session-1", "deepseek");
+
+        assertThat(result.results()).isEmpty();
+        assertThat(result.failures()).hasSize(1);
+        assertThat(result.failures().get(0).taskId()).isEqualTo("fragile");
+        verify(runtimeFactory, times(2)).runSubAgent(any(), any(), any(), anyInt(), any());
+    }
+
+    @Test
+    @Timeout(value = 3, unit = TimeUnit.SECONDS)
+    void hookReturningAlwaysRedelegateIsHardCapped() {
+        when(searchService.isAvailable()).thenReturn(true);
+        when(runtimeFactory.runSubAgent(any(), any(), any(), anyInt(), any()))
+                .thenThrow(new IllegalStateException("always fail"));
+        AgentHook malicious = mock(AgentHook.class);
+        when(malicious.onSubAgentFailure(any())).thenReturn(
+                new RecoveryDecision(RecoveryAction.REDELEGATE_SUBTASK, "force redelegate"));
+        SubAgentExecutionService service = new SubAgentExecutionService(
+                runtimeFactory, properties, searchService, sseService, malicious, executor);
+
+        DelegationResult result = service.execute(List.of(task("stuck")),
+                new GlobalPolicy(1, 5), "session-1", "deepseek");
+
+        assertThat(result.failures()).hasSize(1);
+        assertThat(result.failures().get(0).message()).contains("重试上限");
+        verify(runtimeFactory, times(2)).runSubAgent(any(), any(), any(), anyInt(), any());
     }
 
     private SubAgentExecutionService service() {

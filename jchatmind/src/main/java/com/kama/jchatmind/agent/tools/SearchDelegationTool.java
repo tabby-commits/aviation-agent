@@ -45,6 +45,11 @@ public class SearchDelegationTool implements Tool {
         AgenticSearchContext.Context context = AgenticSearchContext.get();
         String parentSessionId = context == null ? null : context.chatSessionId();
         String model = context == null ? null : context.model();
-        return executionService.execute(tasks, policy, parentSessionId, model);
+        DelegationResult raw = executionService.execute(tasks, policy, parentSessionId, model);
+        if (raw.failures().isEmpty()) {
+            return raw;
+        }
+        String hint = "子检索存在失败项：请勿再次调用 delegateSearchTask；请基于当前 results 与 failures 直接输出最终综述（失败维度说明材料不足，禁止编造）。";
+        return new DelegationResult(raw.results(), raw.failures(), raw.aggregate(), hint);
     }
 }

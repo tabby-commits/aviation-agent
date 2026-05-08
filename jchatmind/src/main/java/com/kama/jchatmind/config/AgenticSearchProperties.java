@@ -52,6 +52,12 @@ public class AgenticSearchProperties {
 
         /** 每个用户请求并发子任务数上限（Semaphore 控制），防止单用户打满线程池 */
         private int perUserMaxParallel = 6;
+
+        /**
+         * 单个子任务在 runSubAgent 抛错后，允许因 hook 决策再跑的最大次数（不含首次执行）。
+         * 例如 1 表示：首次失败最多再执行 1 次；仍失败则返回 failures 条目并交由主 Agent 降级综述。
+         */
+        private int maxSubAgentRedelegations = 1;
     }
 
     /** 子 Agent 工具配置 */

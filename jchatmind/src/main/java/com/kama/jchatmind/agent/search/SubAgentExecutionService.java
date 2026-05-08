@@ -71,11 +71,15 @@ public class SubAgentExecutionService {
                                     String model) {
         long started = System.currentTimeMillis();
         if (tasks == null || tasks.isEmpty()) {
-            return new DelegationResult(List.of(), List.of(new SubTaskFailure(
-                    "global",
-                    SearchDelegationErrorCode.SEARCH_DELEGATION_INVALID_INPUT.name(),
-                    "tasks 不能为空"
-            )), new AggregateStats(0, new TokenUsage(0, 0)));
+            return new DelegationResult(
+                    List.of(),
+                    List.of(new SubTaskFailure(
+                            "global",
+                            SearchDelegationErrorCode.SEARCH_DELEGATION_INVALID_INPUT.name(),
+                            "tasks 不能为空"
+                    )),
+                    new AggregateStats(0, new TokenUsage(0, 0)),
+                    null);
         }
 
         emit(parentSessionId, SseMessage.Type.AGENTIC_DELEGATING, "delegating", null, null, tasks.size(), null);
@@ -117,8 +121,8 @@ public class SubAgentExecutionService {
         return new DelegationResult(
                 results,
                 failures,
-                new AggregateStats(System.currentTimeMillis() - started, new TokenUsage(0, 0))
-        );
+                new AggregateStats(System.currentTimeMillis() - started, new TokenUsage(0, 0)),
+                null);
     }
 
     private TaskOutcome runWithPermit(Semaphore semaphore, SubTaskSpec spec, String parentSessionId, String model) {
@@ -158,21 +162,28 @@ public class SubAgentExecutionService {
                 );
                 return new TaskOutcome(result, null);
             } catch (Exception e) {
+                RecoveryBudget recoveryBudget = delegationRecoveryBudget();
                 RecoveryDecision decision = agentHook.onSubAgentFailure(AgentHookContext.builder()
                         .sessionId(parentSessionId)
                         .agentRole(AgentRole.MAIN)
                         .taskId(taskId(spec))
                         .error(e)
                         .retryCount(retryCount)
-                        .recoveryBudget(RecoveryBudget.defaults())
+                        .recoveryBudget(recoveryBudget)
                         .build());
-                if (decision.action() == RecoveryAction.REDELEGATE_SUBTASK) {
+                boolean hookWantsRedelegate = decision.action() == RecoveryAction.REDELEGATE_SUBTASK;
+                boolean underHardCap = retryCount < Math.max(0, properties.getDelegation().getMaxSubAgentRedelegations());
+                if (hookWantsRedelegate && underHardCap) {
                     emit(parentSessionId, SseMessage.Type.AGENTIC_FALLBACK, "redelegating", null, null, null, taskId(spec));
                     retryCount++;
                     continue;
                 }
                 String code = classify(e);
-                return new TaskOutcome(null, new SubTaskFailure(taskId(spec), code, message(e)));
+                String msg = message(e);
+                if (hookWantsRedelegate && !underHardCap) {
+                    msg = msg + "；已达子任务检索重试上限，请主 Agent 基于已有结果降级综述，勿再次派发同一子任务。";
+                }
+                return new TaskOutcome(null, new SubTaskFailure(taskId(spec), code, msg));
             } finally {
                 emit(parentSessionId, SseMessage.Type.AGENTIC_SUBAGENT_PROGRESS, "finished", 1, 1, null, taskId(spec));
             }
@@ -303,5 +314,11 @@ public class SubAgentExecutionService {
     }
 
     private record FallbackDecision(SubTaskSpec spec, String fallback) {
+    }
+
+    private RecoveryBudget delegationRecoveryBudget() {
+        int cap = Math.max(0, properties.getDelegation().getMaxSubAgentRedelegations());
+        RecoveryBudget d = RecoveryBudget.defaults();
+        return new RecoveryBudget(d.maxToolRetries(), cap, d.maxFinalAnswerSyntheses());
     }
 }

@@ -13,10 +13,15 @@ import java.util.List;
  * @param results   成功完成的子任务结果列表
  * @param failures  失败的子任务列表（可为空列表，不为 null）
  * @param aggregate 本次委派的全局聚合统计
+ * @param stopRetryHint 非空时提示主 Agent 勿重复调用 delegateSearchTask，仅基于当前结果输出
  */
 public record DelegationResult(
         List<SubTaskResult> results,
         List<SubTaskFailure> failures,
-        AggregateStats aggregate
+        AggregateStats aggregate,
+        String stopRetryHint
 ) {
+    public DelegationResult(List<SubTaskResult> results, List<SubTaskFailure> failures, AggregateStats aggregate) {
+        this(results, failures, aggregate, null);
+    }
 }
