@@ -26,9 +26,9 @@ interface AddAgentModalProps {
 const menuItems = [
   { key: "base", label: "基础设置" },
   { key: "model", label: "模型设置" },
-  { key: "knowledge", label: "知识库设置" },
+  { key: "knowledge", label: "情报库设置" },
   // { key: "mcp", label: "MCP 服务器" },
-  { key: "tools", label: "工具调用" },
+  { key: "tools", label: "分析工具" },
   // { key: "memory", label: "全局记忆" },
 ];
 
@@ -50,9 +50,10 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
 
   // 表单数据
   const [formData, setFormData] = useState<CreateAgentRequest>({
-    name: "智能体助手",
+    name: "航天情报分析员",
     description: "",
-    systemPrompt: "你是一个很有用的智能体助手",
+    systemPrompt:
+      "你是一个航天科技情报分析智能体，擅长基于资料线索、公开信息和情报库内容，对航天任务、技术路线、机构动向和产业事件进行克制、可追溯的分析。",
     model: "deepseek-chat",
     allowedTools: [],
     allowedKbs: [],
@@ -84,9 +85,10 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
     } else {
       // 重置表单
       setFormData({
-        name: "agent",
+        name: "航天情报分析员",
         description: "",
-        systemPrompt: "",
+        systemPrompt:
+          "你是一个航天科技情报分析智能体，擅长基于资料线索、公开信息和情报库内容，对航天任务、技术路线、机构动向和产业事件进行克制、可追溯的分析。",
         model: "deepseek-chat",
         allowedTools: [],
         allowedKbs: [],
@@ -119,7 +121,7 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
     <Modal
       open={open}
       onCancel={onClose}
-      title={isEditMode ? "编辑智能体" : "智能体助手"}
+      title={isEditMode ? "编辑情报智能体" : "新建情报智能体"}
       footer={null}
       width={800}
       centered
@@ -152,7 +154,7 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                   </label>
                   <div className="flex items-center">
                     <Input
-                      placeholder="请输入智能体名称"
+                      placeholder="请输入情报智能体名称"
                       value={formData.name}
                       onChange={(e) =>
                         setFormData({ ...formData, name: e.target.value })
@@ -165,7 +167,7 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                     描述
                   </label>
                   <TextArea
-                    placeholder="请输入智能体描述"
+                    placeholder="请输入情报智能体职责描述"
                     rows={2}
                     value={formData.description}
                     onChange={(e) =>
@@ -178,7 +180,7 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                     提示词
                   </label>
                   <TextArea
-                    placeholder="默认提示词"
+                    placeholder="请输入情报分析角色的系统指令"
                     rows={11}
                     value={formData.systemPrompt}
                     onChange={(e) =>
@@ -205,7 +207,7 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                         label: "glm-4.6",
                       },
                     ]}
-                    placeholder="请选择模型"
+                    placeholder="请选择分析模型"
                     style={{ width: "300px" }}
                     value={formData.model}
                     onChange={(value: ModelType) =>
@@ -311,14 +313,14 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
               <div>
                 <div className="mb-4">
                   <label className="block text-gray-700 font-medium mb-3">
-                    知识库
+                    情报库
                   </label>
                   <p className="text-sm text-gray-500 mb-4">
-                    选择智能体可以访问的知识库，支持多选（最多10个）
+                    选择情报智能体可以访问的情报库，支持多选（最多10个）
                   </p>
                   {knowledgeBases.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
-                      <p>暂无知识库，请先创建知识库</p>
+                      <p>暂无情报库，请先创建情报库</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -408,10 +410,10 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
               <div>
                 <div className="mb-4">
                   <label className="block text-gray-700 font-medium mb-3">
-                    工具调用
+                    分析工具
                   </label>
                   <p className="text-sm text-gray-500 mb-4">
-                    选择智能体可以使用的工具，支持多选
+                    选择情报智能体可以使用的工具，支持多选
                   </p>
                   {tools.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">

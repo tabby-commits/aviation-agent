@@ -32,13 +32,13 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall }> = ({ toolCall }) => {
     : toolCall.arguments.slice(0, 50) + (toolCall.arguments.length > 50 ? "..." : "");
 
   return (
-    <div className="text-xs text-gray-500 flex items-center gap-1.5">
-      <ToolOutlined className="text-brand-icon" />
-      <span className="font-mono text-brand-icon">{toolCall.name}</span>
+    <div className="text-xs text-slate-500 flex items-center gap-1.5 rounded-md border border-blue-100 bg-blue-50/70 px-2 py-1">
+      <ToolOutlined className="text-blue-500" />
+      <span className="font-mono text-blue-600">{toolCall.name}</span>
       {argPreview && (
         <>
-          <span className="text-gray-400">·</span>
-          <span className="text-gray-500 truncate max-w-[200px]">{argPreview}</span>
+          <span className="text-slate-300">·</span>
+          <span className="text-slate-500 truncate max-w-[200px]">{argPreview}</span>
         </>
       )}
     </div>
@@ -69,22 +69,22 @@ const ToolResponseDisplay: React.FC<{ toolResponse: ToolResponse }> = ({
   return (
     <div className="my-1.5 text-xs">
       <div 
-        className="flex items-center gap-2 text-gray-500 cursor-pointer hover:text-gray-700 transition-colors"
+        className="flex items-center gap-2 text-slate-500 cursor-pointer hover:text-slate-700 transition-colors rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2"
         onClick={() => setExpanded(!expanded)}
       >
         {expanded ? (
-          <DownOutlined className="text-gray-400" />
+          <DownOutlined className="text-slate-400" />
         ) : (
-          <RightOutlined className="text-gray-400" />
+          <RightOutlined className="text-slate-400" />
         )}
-        <CheckCircleOutlined className="text-green-500" />
-        <span className="font-mono text-green-600">{toolResponse.name}</span>
-        <span className="text-gray-400">·</span>
-        <span className="text-gray-500 truncate flex-1">{dataPreview}</span>
+        <CheckCircleOutlined className="text-emerald-600" />
+        <span className="font-mono text-emerald-700">{toolResponse.name}</span>
+        <span className="text-slate-300">·</span>
+        <span className="text-slate-500 truncate flex-1">{dataPreview}</span>
       </div>
       {expanded && (
-        <div className="ml-5 mt-1.5 p-2 bg-gray-50 rounded border border-gray-200">
-          <div className="text-xs text-gray-600 font-mono">
+        <div className="ml-5 mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+          <div className="text-xs text-slate-600 font-mono">
             {isJson ? (
               <pre className="whitespace-pre-wrap break-words overflow-x-auto max-h-60 overflow-y-auto">
                 {JSON.stringify(parsedData, null, 2)}
@@ -198,8 +198,9 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
   return (
     <div 
       ref={scrollContainerRef}
-      className="flex-1 px-16 pt-4 overflow-y-scroll"
+      className="flex-1 px-6 py-6 overflow-y-scroll workspace-scrollbar"
     >
+      <div className="max-w-4xl mx-auto">
       {messages.map((message) => {
         return (
           <div className="mb-4" key={message.id}>
@@ -250,7 +251,7 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
             {/* System 消息 */}
             {message.role === "system" && (
               <div className="flex justify-center">
-                <div className="px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-full flex items-center gap-1">
+                <div className="px-3 py-1 bg-slate-100 text-slate-600 text-xs rounded-full flex items-center gap-1">
                   <RobotOutlined />
                   <span>{message.content}</span>
                 </div>
@@ -261,30 +262,15 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
       })}
       {displayAgentStatus && (
         <div className="mb-3">
-          <div
-            className="animate-pulse"
-            style={{
-              animation: "pulse 0.8s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-              filter: "brightness(1.15)",
-            }}
-          >
+          <div className="animate-pulse">
             <Bubble
               content={
                 <span className="flex items-center gap-2">
-                  <span
-                    className="font-semibold text-brand-icon"
-                    style={{
-                      animation:
-                        "pulse 0.7s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-                      textShadow:
-                        "0 0 10px rgba(61, 126, 200, 1), 0 0 20px rgba(61, 126, 200, 0.8), 0 0 30px rgba(61, 126, 200, 0.5)",
-                      filter: "brightness(1.3)",
-                    }}
-                  >
+                  <span className="font-semibold text-blue-700">
                     ✨ {getStatusLabel()}
                   </span>
-                  <span className="text-gray-400">·</span>
-                  <span className="text-gray-600">{agentStatusText}</span>
+                  <span className="text-slate-300">·</span>
+                  <span className="text-slate-600">{agentStatusText}</span>
                 </span>
               }
               placement="start"
@@ -292,6 +278,7 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };
