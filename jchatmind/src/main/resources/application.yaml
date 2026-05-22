@@ -1,19 +1,19 @@
-spring:
+﻿spring:
   config:
-    # 本机可放置 application-local.yaml（已加入 .gitignore），避免把 Tavily 等密钥提交到 Git；CI/无此文件时自动忽略
+    # 鏈満鍙斁缃?application-local.yaml锛堝凡鍔犲叆 .gitignore锛夛紝閬垮厤鎶?Tavily 绛夊瘑閽ユ彁浜ゅ埌 Git锛汣I/鏃犳鏂囦欢鏃惰嚜鍔ㄥ拷鐣?
     import: optional:classpath:application-local.yaml
   application:
     name: jchatmind
   datasource:
     url: jdbc:postgresql://localhost:5432/jchatmind
     username: postgres
-    password: 22374493
+    password: ${JCHATMIND_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
   mail:
     host: smtp.qq.com
     port: 587
     username: 1255354811@qq.com
-    password: lcmxzroxakrngbeg # 邮箱授权码
+    password: ${JCHATMIND_MAIL_PASSWORD:} # mail authorization code
     default-encoding: UTF-8
     properties:
       mail:
@@ -24,13 +24,13 @@ spring:
             required: true
   ai:
     deepseek:
-      api-key: sk-9eaf7d9714de462f8d9c23430dfe25e1
+      api-key: ${DEEPSEEK_API_KEY:}
       base-url: https://api.deepseek.com
       chat:
         options:
           model: deepseek-v4-flash
     zhipuai:
-      api-key: 24cd783a283541c3a01e364a368ed997.AHTaMTMeUVycz4CG
+      api-key: ${ZHIPUAI_API_KEY:}
       base-url: https://open.bigmodel.cn/api/paas
       chat:
         options:
@@ -66,31 +66,31 @@ jchatmind:
       final-top-n: 3
       rrf-k: 60
       warmup-on-startup: false
-      max-top-n: 100          # 子 Agent 宽召回 topN 硬上限，防止过度拉取
+      max-top-n: 100          # 瀛?Agent 瀹藉彫鍥?topN 纭笂闄愶紝闃叉杩囧害鎷夊彇
       bm25:
         k1: 1.2
         b: 0.75
-  # ---- Agentic Search（PR1 占位，enabled=false 不影响现有功能）----
+  # ---- Agentic Search锛圥R1 鍗犱綅锛宔nabled=false 涓嶅奖鍝嶇幇鏈夊姛鑳斤級----
   agentic-search:
     enabled: true
     router:
       enabled: true
-      model: deepseek    # 意图路由使用的模型，建议非 reasoning 快速模型
+      model: deepseek    # 鎰忓浘璺敱浣跨敤鐨勬ā鍨嬶紝寤鸿闈?reasoning 蹇€熸ā鍨?
       timeout-ms: 3000
     delegation:
-      max-parallel: 4         # 单次委派最大并发子任务数
-      max-sub-steps-cap: 8    # 子 Agent MAX_STEPS 硬上限
+      max-parallel: 4         # 鍗曟濮旀淳鏈€澶у苟鍙戝瓙浠诲姟鏁?
+      max-sub-steps-cap: 8    # 瀛?Agent MAX_STEPS 纭笂闄?
       default-timeout-seconds: 45
       global-timeout-seconds: 60
       per-user-max-parallel: 6
-      max-sub-agent-redelegations: 1   # 单个子任务首次 runSubAgent 失败后，hook 允许再执行的次数上限
+      max-sub-agent-redelegations: 1   # 鍗曚釜瀛愪换鍔￠娆?runSubAgent 澶辫触鍚庯紝hook 鍏佽鍐嶆墽琛岀殑娆℃暟涓婇檺
     sub-agent:
-      kb-wide-top-k: 30       # SubAgentKnowledgeTool 默认 topK
+      kb-wide-top-k: 30       # SubAgentKnowledgeTool 榛樿 topK
       kb-wide-top-k-max: 60
     search:
       default-count: 8
       count-max: 15
-  # ---- Tavily Search Provider；密钥优先 TAVILY_API_KEY 或 application-local.yaml ----
+  # ---- Tavily Search Provider锛涘瘑閽ヤ紭鍏?TAVILY_API_KEY 鎴?application-local.yaml ----
   search:
     tavily:
       enabled: true
