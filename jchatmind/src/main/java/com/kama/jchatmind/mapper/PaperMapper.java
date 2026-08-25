@@ -1,8 +1,12 @@
 package com.kama.jchatmind.mapper;
 
 import com.kama.jchatmind.model.entity.Paper;
+import com.kama.jchatmind.model.request.PaperQueryRequest;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * 针对表【paper】的数据库操作 Mapper
@@ -19,4 +23,15 @@ public interface PaperMapper {
 
     /** 删除 doc_id 以 prefix 开头的记录（测试清理用） */
     int deleteByDocIdPrefix(@Param("prefix") String prefix);
+
+    /** 条件分页查询（按 publish_year DESC, doc_id ASC 排序） */
+    List<Paper> selectByCondition(PaperQueryRequest query);
+
+    long countByCondition(PaperQueryRequest query);
+
+    /** 按来源库分组计数，返回列 source_db / cnt */
+    List<Map<String, Object>> countGroupBySourceDb();
+
+    /** 按筛选状态分组计数，返回列 screening_status / cnt */
+    List<Map<String, Object>> countGroupByScreeningStatus();
 }

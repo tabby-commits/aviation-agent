@@ -108,4 +108,63 @@
         FROM paper
         WHERE doc_id LIKE CONCAT(#{prefix}, '%')
     </delete>
+
+    <sql id="Query_Condition">
+        <where>
+            <if test="sourceDb != null and sourceDb != ''">
+                AND source_db = #{sourceDb}
+            </if>
+            <if test="country != null and country != ''">
+                AND first_author_country = #{country}
+            </if>
+            <if test="yearFrom != null">
+                AND publish_year &gt;= #{yearFrom}
+            </if>
+            <if test="yearTo != null">
+                AND publish_year &lt;= #{yearTo}
+            </if>
+            <if test="screeningStatus != null and screeningStatus != ''">
+                AND screening_status = #{screeningStatus}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (title ILIKE CONCAT('%', #{keyword}, '%')
+                 OR abstract_text ILIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectByCondition" parameterType="com.kama.jchatmind.model.request.PaperQueryRequest"
+            resultMap="BaseResultMap">
+        SELECT id,
+               doc_id, source_db, title,
+               abstract_text, authors::text AS authors, affiliations::text AS affiliations,
+               first_author, first_author_affiliation, first_author_country,
+               country_evidence, country_confidence, publish_year,
+               journal, doc_type, cited_count,
+               doi, keywords, screening_status,
+               exclude_reason, file_name, created_at, updated_at
+        FROM paper
+        <include refid="Query_Condition"/>
+        ORDER BY publish_year DESC NULLS LAST, doc_id ASC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <select id="countByCondition" parameterType="com.kama.jchatmind.model.request.PaperQueryRequest"
+            resultType="long">
+        SELECT COUNT(*)
+        FROM paper
+        <include refid="Query_Condition"/>
+    </select>
+
+    <select id="countGroupBySourceDb" resultType="map">
+        SELECT source_db, COUNT(*) AS cnt
+        FROM paper
+        GROUP BY source_db
+    </select>
+
+    <select id="countGroupByScreeningStatus" resultType="map">
+        SELECT screening_status, COUNT(*) AS cnt
+        FROM paper
+        GROUP BY screening_status
+    </select>
 </mapper>
