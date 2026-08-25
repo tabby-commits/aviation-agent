@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kama.jchatmind.mapper.ParameterEvidenceMapper">
+
+    <resultMap id="BaseResultMap" type="com.kama.jchatmind.model.entity.ParameterEvidence">
+        <id property="id" column="id" jdbcType="VARCHAR"/>
+        <result property="decisionId" column="decision_id" jdbcType="VARCHAR"/>
+        <result property="docId" column="doc_id" jdbcType="VARCHAR"/>
+        <result property="technicalObject" column="technical_object" jdbcType="VARCHAR"/>
+        <result property="parameterNameRaw" column="parameter_name_raw" jdbcType="VARCHAR"/>
+        <result property="parameterNameCanonical" column="parameter_name_canonical" jdbcType="VARCHAR"/>
+        <result property="parameterFamily" column="parameter_family" jdbcType="VARCHAR"/>
+        <result property="valueRaw" column="value_raw" jdbcType="VARCHAR"/>
+        <result property="comparator" column="comparator" jdbcType="VARCHAR"/>
+        <result property="valueMin" column="value_min" jdbcType="DOUBLE"/>
+        <result property="valueMax" column="value_max" jdbcType="DOUBLE"/>
+        <result property="unitRaw" column="unit_raw" jdbcType="VARCHAR"/>
+        <result property="unitNormalized" column="unit_normalized" jdbcType="VARCHAR"/>
+        <result property="conditionText" column="condition_text" jdbcType="VARCHAR"/>
+        <result property="evidenceText" column="evidence_text" jdbcType="VARCHAR"/>
+        <result property="pageNumber" column="page_number" jdbcType="INTEGER"/>
+        <result property="section" column="section" jdbcType="VARCHAR"/>
+        <result property="sourceType" column="source_type" jdbcType="VARCHAR"/>
+        <result property="leafPath" column="leaf_path" jdbcType="VARCHAR"/>
+        <result property="resultForm" column="result_form" jdbcType="VARCHAR"/>
+        <result property="reviewStatus" column="review_status" jdbcType="VARCHAR"/>
+        <result property="firstAuthorCountry" column="first_author_country" jdbcType="VARCHAR"/>
+        <result property="title" column="title" jdbcType="VARCHAR"/>
+        <result property="publishYear" column="publish_year" jdbcType="INTEGER"/>
+        <result property="createdAt" column="created_at" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="upsert" parameterType="com.kama.jchatmind.model.entity.ParameterEvidence"
+            keyColumn="id" keyProperty="id" useGeneratedKeys="true">
+        INSERT INTO parameter_evidence
+        (
+            decision_id, doc_id, technical_object, parameter_name_raw, parameter_name_canonical,
+            parameter_family, value_raw, comparator, value_min, value_max,
+            unit_raw, unit_normalized, condition_text, evidence_text, page_number,
+            section, source_type, leaf_path, result_form, review_status,
+            first_author_country, title, created_at
+        )
+        VALUES
+        (
+            #{decisionId}, #{docId}, #{technicalObject}, #{parameterNameRaw}, #{parameterNameCanonical},
+            #{parameterFamily}, #{valueRaw}, #{comparator}, #{valueMin}, #{valueMax},
+            #{unitRaw}, #{unitNormalized}, #{conditionText}, #{evidenceText}, #{pageNumber},
+            #{section}, #{sourceType}, #{leafPath}, #{resultForm}, #{reviewStatus},
+            #{firstAuthorCountry}, #{title}, now()
+        )
+        ON CONFLICT (decision_id) DO UPDATE SET
+            doc_id = EXCLUDED.doc_id,
+            technical_object = EXCLUDED.technical_object,
+            parameter_name_raw = EXCLUDED.parameter_name_raw,
+            parameter_name_canonical = EXCLUDED.parameter_name_canonical,
+            parameter_family = EXCLUDED.parameter_family,
+            value_raw = EXCLUDED.value_raw,
+            comparator = EXCLUDED.comparator,
+            value_min = EXCLUDED.value_min,
+            value_max = EXCLUDED.value_max,
+            unit_raw = EXCLUDED.unit_raw,
+            unit_normalized = EXCLUDED.unit_normalized,
+            condition_text = EXCLUDED.condition_text,
+            evidence_text = EXCLUDED.evidence_text,
+            page_number = EXCLUDED.page_number,
+            section = EXCLUDED.section,
+            source_type = EXCLUDED.source_type,
+            leaf_path = EXCLUDED.leaf_path,
+            result_form = EXCLUDED.result_form,
+            review_status = EXCLUDED.review_status,
+            first_author_country = EXCLUDED.first_author_country,
+            title = EXCLUDED.title
+    </insert>
+
+    <select id="selectByDecisionId" resultMap="BaseResultMap">
+        SELECT id, decision_id, doc_id, technical_object, parameter_name_raw, parameter_name_canonical,
+               parameter_family, value_raw, comparator, value_min, value_max,
+               unit_raw, unit_normalized, condition_text, evidence_text, page_number,
+               section, source_type, leaf_path, result_form, review_status,
+               first_author_country, title, publish_year, created_at
+        FROM parameter_evidence
+        WHERE decision_id = #{decisionId}
+    </select>
+
+    <sql id="Query_Condition">
+        <where>
+            <if test="family != null and family != ''">
+                AND parameter_family = #{family}
+            </if>
+            <if test="country != null and country != ''">
+                AND first_author_country = #{country}
+            </if>
+            <if test="docId != null and docId != ''">
+                AND doc_id = #{docId}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (technical_object ILIKE CONCAT('%', #{keyword}, '%')
+                 OR parameter_name_canonical ILIKE CONCAT('%', #{keyword}, '%')
+                 OR evidence_text ILIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectByCondition" parameterType="com.kama.jchatmind.model.request.ParameterQueryRequest"
+            resultMap="BaseResultMap">
+        SELECT id, decision_id, doc_id, technical_object, parameter_name_raw, parameter_name_canonical,
+               parameter_family, value_raw, comparator, value_min, value_max,
+               unit_raw, unit_normalized, condition_text, evidence_text, page_number,
+               section, source_type, leaf_path, result_form, review_status,
+               first_author_country, title, publish_year, created_at
+        FROM parameter_evidence
+        <include refid="Query_Condition"/>
+        ORDER BY publish_year DESC NULLS LAST, decision_id ASC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <select id="countByCondition" parameterType="com.kama.jchatmind.model.request.ParameterQueryRequest"
+            resultType="long">
+        SELECT COUNT(*)
+        FROM parameter_evidence
+        <include refid="Query_Condition"/>
+    </select>
+
+    <update id="enrichPublishYear">
+        UPDATE parameter_evidence pe
+        SET publish_year = p.publish_year
+        FROM paper p
+        WHERE pe.doc_id = p.doc_id
+          AND pe.publish_year IS DISTINCT FROM p.publish_year
+    </update>
+
+    <delete id="deleteByDecisionIdPrefix">
+        DELETE
+        FROM parameter_evidence
+        WHERE decision_id LIKE CONCAT(#{prefix}, '%')
+    </delete>
+</mapper>
