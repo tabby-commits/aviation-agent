@@ -5,6 +5,7 @@ import com.kama.jchatmind.model.response.GetPaperResponse;
 import com.kama.jchatmind.model.response.GetPapersResponse;
 import com.kama.jchatmind.model.response.PaperImportResponse;
 import com.kama.jchatmind.model.response.PaperImportStatsResponse;
+import com.kama.jchatmind.model.response.PaperScreeningImportResponse;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -19,6 +20,12 @@ public interface PaperFacadeService {
      * @param source WOS / CNKI（大小写不敏感）
      */
     PaperImportResponse importMetadata(MultipartFile file, String source);
+
+    /**
+     * 导入筛选结论（document_screen.csv）：更新 screening_status/国别判定/文件名/排除原因
+     * paper 表中不存在的 doc_id 跳过并计数
+     */
+    PaperScreeningImportResponse importScreening(MultipartFile file);
 
     /** 分页条件查询论文 */
     GetPapersResponse getPapers(PaperQueryRequest query);

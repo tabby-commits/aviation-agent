@@ -109,6 +109,18 @@
         WHERE doc_id LIKE CONCAT(#{prefix}, '%')
     </delete>
 
+    <update id="updateScreening" parameterType="com.kama.jchatmind.model.entity.Paper">
+        UPDATE paper
+        SET screening_status     = #{paper.screeningStatus},
+            first_author_country = COALESCE(#{paper.firstAuthorCountry}, first_author_country),
+            country_evidence     = COALESCE(#{paper.countryEvidence}, country_evidence),
+            country_confidence   = COALESCE(#{paper.countryConfidence}, country_confidence),
+            file_name            = COALESCE(#{paper.fileName}, file_name),
+            exclude_reason       = COALESCE(#{paper.excludeReason}, exclude_reason),
+            updated_at           = now()
+        WHERE doc_id = #{paper.docId}
+    </update>
+
     <sql id="Query_Condition">
         <where>
             <if test="sourceDb != null and sourceDb != ''">

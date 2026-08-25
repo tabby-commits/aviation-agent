@@ -6,6 +6,7 @@ import com.kama.jchatmind.model.response.GetPaperResponse;
 import com.kama.jchatmind.model.response.GetPapersResponse;
 import com.kama.jchatmind.model.response.PaperImportResponse;
 import com.kama.jchatmind.model.response.PaperImportStatsResponse;
+import com.kama.jchatmind.model.response.PaperScreeningImportResponse;
 import com.kama.jchatmind.service.PaperFacadeService;
 import lombok.AllArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,6 +33,13 @@ public class PaperController {
             @RequestParam("file") MultipartFile file,
             @RequestParam("source") String source) {
         return ApiResponse.success(paperFacadeService.importMetadata(file, source));
+    }
+
+    // 导入筛选结论（document_screen.csv，更新国别判定与纳入状态）
+    @PostMapping("/papers/import/screening")
+    public ApiResponse<PaperScreeningImportResponse> importScreening(
+            @RequestParam("file") MultipartFile file) {
+        return ApiResponse.success(paperFacadeService.importScreening(file));
     }
 
     // 分页查询论文

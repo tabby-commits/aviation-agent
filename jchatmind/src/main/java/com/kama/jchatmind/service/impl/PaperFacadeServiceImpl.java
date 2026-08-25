@@ -8,9 +8,11 @@ import com.kama.jchatmind.model.response.GetPaperResponse;
 import com.kama.jchatmind.model.response.GetPapersResponse;
 import com.kama.jchatmind.model.response.PaperImportResponse;
 import com.kama.jchatmind.model.response.PaperImportStatsResponse;
+import com.kama.jchatmind.model.response.PaperScreeningImportResponse;
 import com.kama.jchatmind.model.response.PaperSummary;
 import com.kama.jchatmind.service.PaperFacadeService;
 import com.kama.jchatmind.service.paper.CnkiRefWorksParser;
+import com.kama.jchatmind.service.paper.ScreeningCsvParser;
 import com.kama.jchatmind.service.paper.WosCsvParser;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +40,8 @@ public class PaperFacadeServiceImpl implements PaperFacadeService {
     private final WosCsvParser wosCsvParser;
 
     private final CnkiRefWorksParser cnkiRefWorksParser;
+
+    private final ScreeningCsvParser screeningCsvParser;
 
     private final PaperMapper paperMapper;
 
@@ -88,6 +92,56 @@ public class PaperFacadeServiceImpl implements PaperFacadeService {
                 .total(papers.size())
                 .inserted(inserted)
                 .updated(updated)
+                .failed(failed)
+                .errors(errors)
+                .build();
+    }
+
+    @Override
+    public PaperScreeningImportResponse importScreening(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BizException("导入文件不能为空");
+        }
+
+        List<Paper> records;
+        try (InputStream in = file.getInputStream()) {
+            records = screeningCsvParser.parse(in);
+        } catch (IOException e) {
+            throw new BizException("读取导入文件失败：" + e.getMessage());
+        }
+
+        int updated = 0;
+        int skipped = 0;
+        int failed = 0;
+        List<String> errors = new ArrayList<>();
+
+        for (Paper record : records) {
+            if (record.getDocId() == null) {
+                skipped++;
+                continue;
+            }
+            try {
+                int rows = paperMapper.updateScreening(record);
+                if (rows == 0) {
+                    skipped++; // paper 表中无此 doc_id（元数据未导入）
+                } else {
+                    updated++;
+                }
+            } catch (Exception e) {
+                failed++;
+                if (errors.size() < MAX_ERRORS_IN_RESPONSE) {
+                    errors.add(record.getDocId() + ": " + e.getMessage());
+                }
+                log.warn("筛选结论导入失败 docId={}", record.getDocId(), e);
+            }
+        }
+
+        log.info("筛选结论导入完成 total={} updated={} skipped={} failed={}",
+                records.size(), updated, skipped, failed);
+        return PaperScreeningImportResponse.builder()
+                .total(records.size())
+                .updated(updated)
+                .skipped(skipped)
                 .failed(failed)
                 .errors(errors)
                 .build();

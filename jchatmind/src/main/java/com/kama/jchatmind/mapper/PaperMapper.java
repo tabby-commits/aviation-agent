@@ -24,6 +24,9 @@ public interface PaperMapper {
     /** 删除 doc_id 以 prefix 开头的记录（测试清理用） */
     int deleteByDocIdPrefix(@Param("prefix") String prefix);
 
+    /** 按筛选结论更新（screening_status/国别/证据/置信度/文件名/排除原因，空值不覆盖），返回影响行数 */
+    int updateScreening(@Param("paper") Paper paper);
+
     /** 条件分页查询（按 publish_year DESC, doc_id ASC 排序） */
     List<Paper> selectByCondition(PaperQueryRequest query);
 
