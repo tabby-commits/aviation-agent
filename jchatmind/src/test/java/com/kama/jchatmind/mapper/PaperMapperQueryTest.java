@@ -60,6 +60,7 @@ public class PaperMapperQueryTest {
     @Test
     public void shouldFilterByYearRangeAndCountry() {
         PaperQueryRequest query = new PaperQueryRequest();
+        query.setKeyword("LEO Satellite Paper"); // 圈定测试数据集
         query.setYearFrom(2022);
         query.setYearTo(2024);
         query.setCountry("US");
@@ -79,6 +80,7 @@ public class PaperMapperQueryTest {
     @Test
     public void shouldFilterByScreeningStatus() {
         PaperQueryRequest query = new PaperQueryRequest();
+        query.setKeyword("LEO Satellite Paper"); // 圈定测试数据集
         query.setScreeningStatus("excluded");
         List<Paper> papers = paperMapper.selectByCondition(query);
         assertEquals(1, papers.size());

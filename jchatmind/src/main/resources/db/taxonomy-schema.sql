@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS parameter_evidence
     parameter_name_canonical  VARCHAR(256),
     parameter_family          VARCHAR(256),
     value_raw                 TEXT,
-    comparator                VARCHAR(16),
+    comparator                VARCHAR(64),
     value_min                 DOUBLE PRECISION,
     value_max                 DOUBLE PRECISION,
     unit_raw                  VARCHAR(128),

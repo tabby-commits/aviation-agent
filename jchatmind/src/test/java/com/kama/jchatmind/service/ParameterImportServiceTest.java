@@ -116,10 +116,12 @@ public class ParameterImportServiceTest {
 
         ParameterQueryRequest byCountry = new ParameterQueryRequest();
         byCountry.setCountry("CN");
+        byCountry.setFamily("时延/延迟"); // 测试数据族名（真实库为英文族名），圈定测试集
         assertEquals(1, parameterFacadeService.getParameters(byCountry).getTotal());
 
         ParameterQueryRequest byKeyword = new ParameterQueryRequest();
         byKeyword.setKeyword("FedLEO");
+        byKeyword.setDocId("WOS:TEST-PM1"); // 真实库中 FedLEO 亦存在，用测试 docId 圈定
         assertEquals(1, parameterFacadeService.getParameters(byKeyword).getTotal());
     }
 }
