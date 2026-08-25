@@ -47,7 +47,9 @@ public class PaperMapperQueryTest {
 
     @Test
     public void shouldFilterBySourceDb() {
+        // keyword 圈定本测试插入的数据集，避免真实入库数据影响断言
         PaperQueryRequest query = new PaperQueryRequest();
+        query.setKeyword("LEO Satellite Paper");
         query.setSourceDb("CNKI");
         List<Paper> papers = paperMapper.selectByCondition(query);
         assertTrue(papers.stream().allMatch(p -> "CNKI".equals(p.getSourceDb())));
@@ -86,14 +88,16 @@ public class PaperMapperQueryTest {
     @Test
     public void shouldPaginate() {
         PaperQueryRequest page1 = new PaperQueryRequest();
+        page1.setKeyword("LEO Satellite Paper");
         page1.setPage(1);
         page1.setPageSize(2);
         assertEquals(2, paperMapper.selectByCondition(page1).size());
 
         PaperQueryRequest page3 = new PaperQueryRequest();
+        page3.setKeyword("LEO Satellite Paper");
         page3.setPage(3);
         page3.setPageSize(2);
-        // 共 5 条，第 3 页只余 1 条
+        // 测试数据集共 5 条，第 3 页只余 1 条
         assertEquals(1, paperMapper.selectByCondition(page3).size());
     }
 
