@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kama.jchatmind.mapper.PaperMapper">
+
+    <resultMap id="BaseResultMap" type="com.kama.jchatmind.model.entity.Paper">
+        <id property="id" column="id" jdbcType="VARCHAR"/>
+        <result property="docId" column="doc_id" jdbcType="VARCHAR"/>
+        <result property="sourceDb" column="source_db" jdbcType="VARCHAR"/>
+        <result property="title" column="title" jdbcType="VARCHAR"/>
+        <result property="abstractText" column="abstract_text" jdbcType="VARCHAR"/>
+        <result property="authors" column="authors" jdbcType="VARCHAR"/>
+        <result property="affiliations" column="affiliations" jdbcType="VARCHAR"/>
+        <result property="firstAuthor" column="first_author" jdbcType="VARCHAR"/>
+        <result property="firstAuthorAffiliation" column="first_author_affiliation" jdbcType="VARCHAR"/>
+        <result property="firstAuthorCountry" column="first_author_country" jdbcType="VARCHAR"/>
+        <result property="countryEvidence" column="country_evidence" jdbcType="VARCHAR"/>
+        <result property="countryConfidence" column="country_confidence" jdbcType="VARCHAR"/>
+        <result property="publishYear" column="publish_year" jdbcType="INTEGER"/>
+        <result property="journal" column="journal" jdbcType="VARCHAR"/>
+        <result property="docType" column="doc_type" jdbcType="VARCHAR"/>
+        <result property="citedCount" column="cited_count" jdbcType="INTEGER"/>
+        <result property="doi" column="doi" jdbcType="VARCHAR"/>
+        <result property="keywords" column="keywords" jdbcType="VARCHAR"/>
+        <result property="screeningStatus" column="screening_status" jdbcType="VARCHAR"/>
+        <result property="excludeReason" column="exclude_reason" jdbcType="VARCHAR"/>
+        <result property="fileName" column="file_name" jdbcType="VARCHAR"/>
+        <result property="createdAt" column="created_at" jdbcType="TIMESTAMP"/>
+        <result property="updatedAt" column="updated_at" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,doc_id,source_db,title,
+        abstract_text,authors,affiliations,
+        first_author,first_author_affiliation,first_author_country,
+        country_evidence,country_confidence,publish_year,
+        journal,doc_type,cited_count,
+        doi,keywords,screening_status,
+        exclude_reason,file_name,created_at,updated_at
+    </sql>
+
+    <insert id="upsert" parameterType="com.kama.jchatmind.model.entity.Paper"
+            keyColumn="id" keyProperty="id" useGeneratedKeys="true">
+        INSERT INTO paper
+        (
+            doc_id, source_db, title, abstract_text,
+            authors, affiliations, first_author, first_author_affiliation,
+            first_author_country, country_evidence, country_confidence,
+            publish_year, journal, doc_type, cited_count,
+            doi, keywords, screening_status,
+            exclude_reason, file_name, created_at, updated_at
+        )
+        VALUES
+        (
+            #{docId}, #{sourceDb}, #{title}, #{abstractText},
+            CAST(#{authors} AS jsonb), CAST(#{affiliations} AS jsonb),
+            #{firstAuthor}, #{firstAuthorAffiliation},
+            #{firstAuthorCountry}, #{countryEvidence}, #{countryConfidence},
+            #{publishYear}, #{journal}, #{docType}, #{citedCount},
+            #{doi}, #{keywords}, #{screeningStatus},
+            #{excludeReason}, #{fileName}, now(), now()
+        )
+        ON CONFLICT (doc_id) DO UPDATE SET
+            source_db = EXCLUDED.source_db,
+            title = EXCLUDED.title,
+            abstract_text = EXCLUDED.abstract_text,
+            authors = EXCLUDED.authors,
+            affiliations = EXCLUDED.affiliations,
+            first_author = EXCLUDED.first_author,
+            first_author_affiliation = EXCLUDED.first_author_affiliation,
+            first_author_country = COALESCE(EXCLUDED.first_author_country, paper.first_author_country),
+            country_evidence = COALESCE(EXCLUDED.country_evidence, paper.country_evidence),
+            country_confidence = COALESCE(EXCLUDED.country_confidence, paper.country_confidence),
+            publish_year = EXCLUDED.publish_year,
+            journal = EXCLUDED.journal,
+            doc_type = EXCLUDED.doc_type,
+            cited_count = EXCLUDED.cited_count,
+            doi = EXCLUDED.doi,
+            keywords = EXCLUDED.keywords,
+            screening_status = EXCLUDED.screening_status,
+            exclude_reason = COALESCE(EXCLUDED.exclude_reason, paper.exclude_reason),
+            file_name = COALESCE(EXCLUDED.file_name, paper.file_name),
+            updated_at = now()
+    </insert>
+
+    <select id="selectByDocId" resultMap="BaseResultMap">
+        SELECT id,
+               doc_id, source_db, title,
+               abstract_text, authors::text AS authors, affiliations::text AS affiliations,
+               first_author, first_author_affiliation, first_author_country,
+               country_evidence, country_confidence, publish_year,
+               journal, doc_type, cited_count,
+               doi, keywords, screening_status,
+               exclude_reason, file_name, created_at, updated_at
+        FROM paper
+        WHERE doc_id = #{docId}
+    </select>
+
+    <select id="countByDocId" resultType="int">
+        SELECT COUNT(*)
+        FROM paper
+        WHERE doc_id = #{docId}
+    </select>
+
+    <delete id="deleteByDocIdPrefix">
+        DELETE
+        FROM paper
+        WHERE doc_id LIKE CONCAT(#{prefix}, '%')
+    </delete>
+</mapper>
