@@ -3,6 +3,7 @@ package com.kama.jchatmind.service;
 import com.kama.jchatmind.model.request.PaperQueryRequest;
 import com.kama.jchatmind.model.response.GetPaperResponse;
 import com.kama.jchatmind.model.response.GetPapersResponse;
+import com.kama.jchatmind.model.response.MembershipImportResponse;
 import com.kama.jchatmind.model.response.PaperImportResponse;
 import com.kama.jchatmind.model.response.PaperImportStatsResponse;
 import com.kama.jchatmind.model.response.PaperScreeningImportResponse;
@@ -26,6 +27,13 @@ public interface PaperFacadeService {
      * paper 表中不存在的 doc_id 跳过并计数
      */
     PaperScreeningImportResponse importScreening(MultipartFile file);
+
+    /**
+     * 导入论文分类归属（paper_members.csv）：
+     * 只处理 level2_assignment，EASC 一级类目按内置映射转为新体系 code；
+     * candidate_cluster / 未匹配类目 / paper 表缺失的行分别计数跳过
+     */
+    MembershipImportResponse importTaxonomyMemberships(MultipartFile file);
 
     /** 分页条件查询论文 */
     GetPapersResponse getPapers(PaperQueryRequest query);

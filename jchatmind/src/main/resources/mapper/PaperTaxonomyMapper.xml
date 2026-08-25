@@ -20,6 +20,13 @@
         ON CONFLICT (doc_id, taxonomy_code, membership_type) DO NOTHING
     </insert>
 
+    <select id="selectByDocId" resultMap="BaseResultMap">
+        SELECT id, doc_id, taxonomy_code, membership_type, source, created_at
+        FROM paper_taxonomy
+        WHERE doc_id = #{docId}
+        ORDER BY created_at ASC
+    </select>
+
     <delete id="deleteByTaxonomyCode">
         DELETE
         FROM paper_taxonomy

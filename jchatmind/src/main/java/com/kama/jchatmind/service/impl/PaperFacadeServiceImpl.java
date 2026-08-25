@@ -2,16 +2,19 @@ package com.kama.jchatmind.service.impl;
 
 import com.kama.jchatmind.exception.BizException;
 import com.kama.jchatmind.mapper.PaperMapper;
+import com.kama.jchatmind.mapper.PaperTaxonomyMapper;
 import com.kama.jchatmind.model.entity.Paper;
 import com.kama.jchatmind.model.request.PaperQueryRequest;
 import com.kama.jchatmind.model.response.GetPaperResponse;
 import com.kama.jchatmind.model.response.GetPapersResponse;
+import com.kama.jchatmind.model.response.MembershipImportResponse;
 import com.kama.jchatmind.model.response.PaperImportResponse;
 import com.kama.jchatmind.model.response.PaperImportStatsResponse;
 import com.kama.jchatmind.model.response.PaperScreeningImportResponse;
 import com.kama.jchatmind.model.response.PaperSummary;
 import com.kama.jchatmind.service.PaperFacadeService;
 import com.kama.jchatmind.service.paper.CnkiRefWorksParser;
+import com.kama.jchatmind.service.paper.MembersCsvParser;
 import com.kama.jchatmind.service.paper.ScreeningCsvParser;
 import com.kama.jchatmind.service.paper.WosCsvParser;
 import lombok.AllArgsConstructor;
@@ -43,7 +46,11 @@ public class PaperFacadeServiceImpl implements PaperFacadeService {
 
     private final ScreeningCsvParser screeningCsvParser;
 
+    private final MembersCsvParser membersCsvParser;
+
     private final PaperMapper paperMapper;
+
+    private final PaperTaxonomyMapper paperTaxonomyMapper;
 
     @Override
     public PaperImportResponse importMetadata(MultipartFile file, String source) {
@@ -142,6 +149,72 @@ public class PaperFacadeServiceImpl implements PaperFacadeService {
                 .total(records.size())
                 .updated(updated)
                 .skipped(skipped)
+                .failed(failed)
+                .errors(errors)
+                .build();
+    }
+
+    @Override
+    public MembershipImportResponse importTaxonomyMemberships(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BizException("导入文件不能为空");
+        }
+
+        List<MembersCsvParser.ParsedMembership> records;
+        try (InputStream in = file.getInputStream()) {
+            records = membersCsvParser.parse(in);
+        } catch (IOException e) {
+            throw new BizException("读取导入文件失败：" + e.getMessage());
+        }
+
+        int importedCount = 0;
+        int candidateSkipped = 0;
+        int unmappedSkipped = 0;
+        int noPaperSkipped = 0;
+        int failed = 0;
+        List<String> errors = new ArrayList<>();
+
+        for (MembersCsvParser.ParsedMembership record : records) {
+            if (record.membership.getDocId() == null) {
+                failed++;
+                continue;
+            }
+            if (!record.assigned) {
+                candidateSkipped++; // 弱关联（candidate_cluster）不入库
+                continue;
+            }
+            if (record.unmapped) {
+                unmappedSkipped++;
+                if (errors.size() < MAX_ERRORS_IN_RESPONSE) {
+                    errors.add("未匹配一级类目: " + record.membership.getDocId());
+                }
+                continue;
+            }
+            try {
+                if (paperMapper.selectByDocId(record.membership.getDocId()) == null) {
+                    noPaperSkipped++; // 元数据未导入，归属无处挂靠
+                    continue;
+                }
+                if (paperTaxonomyMapper.insertIgnore(record.membership) > 0) {
+                    importedCount++;
+                }
+            } catch (Exception e) {
+                failed++;
+                if (errors.size() < MAX_ERRORS_IN_RESPONSE) {
+                    errors.add(record.membership.getDocId() + ": " + e.getMessage());
+                }
+                log.warn("归属导入失败 docId={}", record.membership.getDocId(), e);
+            }
+        }
+
+        log.info("论文归属导入完成 total={} imported={} candidateSkipped={} unmappedSkipped={} noPaperSkipped={} failed={}",
+                records.size(), importedCount, candidateSkipped, unmappedSkipped, noPaperSkipped, failed);
+        return MembershipImportResponse.builder()
+                .total(records.size())
+                .imported(importedCount)
+                .candidateSkipped(candidateSkipped)
+                .unmappedSkipped(unmappedSkipped)
+                .noPaperSkipped(noPaperSkipped)
                 .failed(failed)
                 .errors(errors)
                 .build();

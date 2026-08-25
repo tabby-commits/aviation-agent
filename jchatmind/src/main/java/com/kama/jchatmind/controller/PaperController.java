@@ -4,6 +4,7 @@ import com.kama.jchatmind.model.common.ApiResponse;
 import com.kama.jchatmind.model.request.PaperQueryRequest;
 import com.kama.jchatmind.model.response.GetPaperResponse;
 import com.kama.jchatmind.model.response.GetPapersResponse;
+import com.kama.jchatmind.model.response.MembershipImportResponse;
 import com.kama.jchatmind.model.response.PaperImportResponse;
 import com.kama.jchatmind.model.response.PaperImportStatsResponse;
 import com.kama.jchatmind.model.response.PaperScreeningImportResponse;
@@ -40,6 +41,13 @@ public class PaperController {
     public ApiResponse<PaperScreeningImportResponse> importScreening(
             @RequestParam("file") MultipartFile file) {
         return ApiResponse.success(paperFacadeService.importScreening(file));
+    }
+
+    // 导入论文分类归属（paper_members.csv，EASC 一级类目映射为新体系 code）
+    @PostMapping("/papers/import/taxonomy-memberships")
+    public ApiResponse<MembershipImportResponse> importTaxonomyMemberships(
+            @RequestParam("file") MultipartFile file) {
+        return ApiResponse.success(paperFacadeService.importTaxonomyMemberships(file));
     }
 
     // 分页查询论文
