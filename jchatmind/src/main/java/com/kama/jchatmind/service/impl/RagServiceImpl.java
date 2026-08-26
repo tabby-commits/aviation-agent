@@ -83,6 +83,8 @@ public class RagServiceImpl implements RagService, StructuredRetrievalService {
                 ))
                 .retrieve()
                 .bodyToMono(BatchEmbeddingResponse.class)
+                // 批量嵌入（32块）CPU 上约 15-30s；5 分钟无响应视为 Ollama 异常，快速失败而非无限挂起
+                .timeout(java.time.Duration.ofMinutes(5))
                 .block();
         Assert.notNull(resp, "Batch embedding response cannot be null");
         return resp.getEmbeddings() != null ? resp.getEmbeddings() : Collections.emptyList();
