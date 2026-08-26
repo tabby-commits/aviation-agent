@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kama.jchatmind.mapper.EvaluationCheckItemMapper">
+
+    <resultMap id="BaseResultMap" type="com.kama.jchatmind.model.entity.EvaluationCheckItem">
+        <id property="id" column="id" jdbcType="VARCHAR"/>
+        <result property="runId" column="run_id" jdbcType="VARCHAR"/>
+        <result property="itemKey" column="item_key" jdbcType="VARCHAR"/>
+        <result property="status" column="status" jdbcType="VARCHAR"/>
+        <result property="note" column="note" jdbcType="VARCHAR"/>
+        <result property="createdAt" column="created_at" jdbcType="TIMESTAMP"/>
+        <result property="updatedAt" column="updated_at" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="upsert" parameterType="com.kama.jchatmind.model.entity.EvaluationCheckItem"
+            keyColumn="id" keyProperty="id" useGeneratedKeys="true">
+        INSERT INTO evaluation_check_item (run_id, item_key, status, note, created_at, updated_at)
+        VALUES (CAST(#{runId} AS uuid), #{itemKey}, #{status}, #{note}, now(), now())
+        ON CONFLICT (run_id, item_key) DO UPDATE SET
+            status = EXCLUDED.status,
+            note = EXCLUDED.note,
+            updated_at = now()
+    </insert>
+
+    <select id="selectByRunId" resultMap="BaseResultMap">
+        SELECT id, run_id, item_key, status, note, created_at, updated_at
+        FROM evaluation_check_item
+        WHERE run_id = CAST(#{runId} AS uuid)
+        ORDER BY item_key ASC
+    </select>
+
+    <delete id="deleteByRunId">
+        DELETE
+        FROM evaluation_check_item
+        WHERE run_id = CAST(#{runId} AS uuid)
+    </delete>
+</mapper>
