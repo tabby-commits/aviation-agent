@@ -209,3 +209,28 @@ Controller → CountDownLatch(参与处理的文件数)
 - `model/response/BatchResultResponse.java`
 - `model/response/FileResult.java`
 - `test/.../DocumentBatchUploadTest.java` — 4个测试用例全通过
+
+---
+
+## 论文与新闻竞争力分析数据层（2026-08 新增，对应 SPEC.md）
+
+**数据表：** paper（元数据+筛选结论）、taxonomy_node（1层6类分类体系）、paper_taxonomy（论文归属）、parameter_evidence（参数证据）、evaluation_run / evaluation_check_item（运行追溯）、chunk_bge_m3 扩展（论文全文 KB）
+
+**导入接口（幂等，均为 POST）：**
+- `/api/papers/import/metadata?source=WOS|CNKI` — WoS CSV / CNKI RefWorks 元数据
+- `/api/papers/import/screening` — 筛选结论（国别判定/纳入状态）
+- `/api/papers/import/taxonomy-memberships` — EASC 一级类目映射导入归属
+- `/api/papers/import/parameters` — 参数证据（decision_id 幂等+年份富化）
+- `/api/papers/import/corpus?pdfDir=&limit=` — 论文全文（两阶段流水：并发解析→串行大批量嵌入→并发落库；章节过滤：背景/综述/参考文献不入库）
+
+**查询接口：** `/api/papers`（分页过滤）、`/api/papers/{docId}`、`/api/papers/import/stats`、`/api/taxonomy`、`/api/taxonomy/{code}/papers`（中美分布）、`/api/parameters`（参数族/国别/关键词）、`/api/evaluations/runs`（+`/{id}`、`/{id}/report`、`/{id}/checks` 八项客观检查）
+
+**Agent 工具（OPTIONAL）：** PaperSearchTool、ParameterEvidenceTool、TaxonomyBrowseTool、BibliometricTool（指标9-12/16公式计算：完全/分数计数、高被引前10%分数分配、三年移动平均、CAGR、ICR、机构HHI）
+
+**三个专用 Skill：** competitiveness-framework（28项指标）、data-resource-rules（数据源规则+引用格式）、ci-analysis-methods（五类方法+口径核对）；旧 space-tech-intelligence-analyst 已退役
+
+**关键教训：**
+- 集成测试清理严禁 deleteBySource 等与真实数据共用的条件（曾误删4488条归属）
+- 测试断言不得依赖全库计数（真实导入后必挂），用测试数据专属 keyword/family 圈定
+- Ollama CPU 嵌入：大批量单请求（32块/次）远优于并发小请求；llama-server 过载会假死需重启
+- Windows 控制台中文路径需 python urllib.parse.quote 编码后传参
