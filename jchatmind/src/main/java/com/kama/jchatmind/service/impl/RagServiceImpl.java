@@ -39,7 +39,10 @@ public class RagServiceImpl implements RagService, StructuredRetrievalService {
                           ChunkBgeM3Mapper chunkBgeM3Mapper,
                           BM25IndexManager bm25IndexManager,
                           RagHybridProperties hybridProperties) {
-        this.webClient = builder.baseUrl("http://localhost:11434").build();
+        // 嵌入响应较大（32块×1024维float≈650KB），需提高默认 256KB 缓冲上限
+        this.webClient = builder.baseUrl("http://localhost:11434")
+                .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))
+                .build();
         this.chunkBgeM3Mapper = chunkBgeM3Mapper;
         this.bm25IndexManager = bm25IndexManager;
         this.hybridProperties = hybridProperties;
