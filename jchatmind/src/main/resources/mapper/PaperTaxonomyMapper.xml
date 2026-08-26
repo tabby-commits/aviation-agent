@@ -27,6 +27,13 @@
         ORDER BY created_at ASC
     </select>
 
+    <select id="selectByTaxonomyCode" resultMap="BaseResultMap">
+        SELECT id, doc_id, taxonomy_code, membership_type, source, created_at
+        FROM paper_taxonomy
+        WHERE taxonomy_code = #{code}
+        ORDER BY doc_id ASC
+    </select>
+
     <delete id="deleteByTaxonomyCode">
         DELETE
         FROM paper_taxonomy
@@ -37,6 +44,12 @@
         DELETE
         FROM paper_taxonomy
         WHERE source = #{source}
+    </delete>
+
+    <delete id="deleteByDocIdPrefix">
+        DELETE
+        FROM paper_taxonomy
+        WHERE doc_id LIKE CONCAT(#{prefix}, '%')
     </delete>
 
     <select id="countByCode" resultType="int">

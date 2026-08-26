@@ -32,4 +32,25 @@
         FROM paper_taxonomy
         GROUP BY taxonomy_code
     </select>
+
+    <select id="paperCountryStatsByCode" resultType="map">
+        SELECT p.first_author_country, COUNT(*) AS cnt
+        FROM paper_taxonomy pt
+                 JOIN paper p ON pt.doc_id = p.doc_id
+        WHERE pt.taxonomy_code = #{code}
+        GROUP BY p.first_author_country
+        ORDER BY cnt DESC
+    </select>
+
+    <select id="paperListByCode" resultType="map">
+        SELECT p.doc_id        AS docId,
+               p.title         AS title,
+               p.first_author_country AS country,
+               p.publish_year  AS publishYear
+        FROM paper_taxonomy pt
+                 JOIN paper p ON pt.doc_id = p.doc_id
+        WHERE pt.taxonomy_code = #{code}
+        ORDER BY p.publish_year DESC NULLS LAST, p.doc_id ASC
+        LIMIT #{limit}
+    </select>
 </mapper>

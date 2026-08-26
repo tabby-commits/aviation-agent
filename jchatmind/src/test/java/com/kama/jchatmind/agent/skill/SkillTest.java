@@ -275,14 +275,16 @@ class SkillTest {
     }
 
     @Test
-    @DisplayName("测试 invokeSkill 描述提示航天情报分析 Skill")
+    @DisplayName("测试 invokeSkill 描述提示三个航天分析 Skill")
     void testInvokeSkillDescriptionMentionsSpaceTechSkill() throws NoSuchMethodException {
         org.springframework.ai.tool.annotation.Tool annotation = SkillTool.class
                 .getMethod("invokeSkill", String.class, String.class)
                 .getAnnotation(org.springframework.ai.tool.annotation.Tool.class);
 
         assertNotNull(annotation);
-        assertTrue(annotation.description().contains("space-tech-intelligence-analyst"));
+        assertTrue(annotation.description().contains("competitiveness-framework"));
+        assertTrue(annotation.description().contains("data-resource-rules"));
+        assertTrue(annotation.description().contains("ci-analysis-methods"));
         assertTrue(annotation.description().contains("航天"));
         assertTrue(annotation.description().contains("竞争力"));
     }
@@ -313,26 +315,36 @@ class SkillTest {
     }
 
     @Test
-    @DisplayName("测试航天科技情报分析 Skill 已注册")
-    void testSpaceTechIntelligenceAnalystSkillRegistered() {
+    @DisplayName("测试三个航天分析 Skill 已注册")
+    void testCompetitivenessSkillsRegistered() {
         List<SkillDefinition> skills = scanner.scan(Path.of("skills"));
 
-        SkillDefinition skill = skills.stream()
-                .filter(s -> s.getName().equals("space-tech-intelligence-analyst"))
+        SkillDefinition framework = skills.stream()
+                .filter(s -> s.getName().equals("competitiveness-framework"))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("未找到航天科技情报分析 Skill"));
+                .orElseThrow(() -> new AssertionError("未找到竞争力分析框架 Skill"));
+        assertTrue(framework.getDescription().contains("竞争力"));
+        assertTrue(framework.getInstructions().contains("战略重要性"));
+        assertTrue(framework.getInstructions().contains("技术前瞻性"));
+        assertTrue(framework.getInstructions().contains("科技创新能力"));
+        assertTrue(framework.getInstructions().contains("产业成熟度"));
+        assertTrue(framework.getInstructions().contains("28 项"));
+        assertTrue(framework.getInstructions().contains("BibliometricTool"));
 
-        assertTrue(skill.getDescription().contains("航天科技情报分析"));
-        assertTrue(skill.getDescription().contains("商业航天"));
-        assertTrue(skill.getDescription().contains("竞争力"));
-        assertTrue(skill.getDescription().contains("战略重要性"));
-        assertTrue(skill.getDescription().contains("产业成熟度"));
-        assertTrue(skill.getInstructions().contains("Workflow"));
-        assertTrue(skill.getInstructions().contains("Metric selection"));
-        assertTrue(skill.getInstructions().contains("Evidence rules"));
-        assertTrue(skill.getInstructions().contains("Output patterns"));
-        assertTrue(skill.getInstructions().contains("不得编造数据"));
-        assertTrue(skill.getInstructions().contains("技术前瞻性"));
-        assertTrue(skill.getInstructions().contains("全球技术影响力变化"));
+        SkillDefinition rules = skills.stream()
+                .filter(s -> s.getName().equals("data-resource-rules"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("未找到数据资源规则 Skill"));
+        assertTrue(rules.getInstructions().contains("引用格式"));
+        assertTrue(rules.getInstructions().contains("PaperSearchTool"));
+        assertTrue(rules.getInstructions().contains("禁止"));
+
+        SkillDefinition methods = skills.stream()
+                .filter(s -> s.getName().equals("ci-analysis-methods"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("未找到分析方法 Skill"));
+        assertTrue(methods.getInstructions().contains("文献计量"));
+        assertTrue(methods.getInstructions().contains("口径核对"));
+        assertTrue(methods.getInstructions().contains("不得" ) || methods.getInstructions().contains("禁止"));
     }
 }

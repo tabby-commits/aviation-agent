@@ -48,8 +48,8 @@ public class PaperMembershipImportTest {
 
     @BeforeEach
     public void setup() {
-        // MB4 故意不插入（模拟 paper 表缺失）
-        paperTaxonomyMapper.deleteBySource("easc_v19_level2");
+        // 只清理测试专属 docId（deleteBySource 会连带删除真实导入的归属数据，禁止使用）
+        paperTaxonomyMapper.deleteByDocIdPrefix("WOS:TEST-MB");
         paperMapper.deleteByDocIdPrefix("WOS:TEST-MB");
         paperMapper.upsert(Paper.builder().docId("WOS:TEST-MB1").sourceDb("WOS")
                 .title("Paper One").screeningStatus("pending").build());
@@ -61,7 +61,7 @@ public class PaperMembershipImportTest {
 
     @AfterEach
     public void cleanup() {
-        paperTaxonomyMapper.deleteBySource("easc_v19_level2");
+        paperTaxonomyMapper.deleteByDocIdPrefix("WOS:TEST-MB");
         paperMapper.deleteByDocIdPrefix("WOS:TEST-MB");
     }
 

@@ -63,8 +63,11 @@ public class SkillTool implements Tool {
     @org.springframework.ai.tool.annotation.Tool(name = "invokeSkill", description = """
             调用指定的 Skill（专业能力包），获取特定领域任务的详细分析指令。
             参数 skillName 为 Skill 名称，context 为用户问题或任务上下文。
-            当问题涉及航天、商业航天、航天科技情报、科技竞争力、战略重要性、技术前瞻性、创新能力、产业成熟度或动态路径评估时，
-            必须先调用本工具并传入 skillName="space-tech-intelligence-analyst"，context 传入用户原始问题，然后再开展分析。
+            航天竞争力分析使用三个专用 Skill，按问题类型选择：
+            - competitiveness-framework：分析中美航天科技竞争力、选择竞争力指标、分解比较问题时加载（28项指标框架）
+            - data-resource-rules：检索或引用论文/参数证据/新闻/外部信息时加载（数据源选择、优先级与引用格式）
+            - ci-analysis-methods：组织竞争力分析的方法选择、比较口径核对、事实与推断区分时加载（五类分析方法）
+            开始航天竞争力分析前必须先加载 competitiveness-framework；检索证据前加载 data-resource-rules。
             如果不确定应使用哪个 Skill，先调用 listSkills 查看可用 Skill。
             """)
     public String invokeSkill(String skillName, String context) {
