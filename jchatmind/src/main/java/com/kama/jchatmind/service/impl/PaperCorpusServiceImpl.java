@@ -35,10 +35,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 论文全文入库实现：
- * included 论文 → PDF 按页切分 → bge-m3 嵌入 → chunk_bge_m3（与新闻 KB 并列的论文全文 KB）
+ * 论文全文入库实现（两阶段流水，CPU 嵌入瓶颈下的最优吞吐结构）：
+ * 阶段1（并发）：解析 PDF + 章节过滤，结果暂存内存（不建 document，崩溃无中间态）
+ * 阶段2（串行）：全部待嵌入文本按批提交 embedBatch —— Ollama 端串行时，
+ *               少量大请求远优于多个并发小请求（避免排队与过载）
+ * 阶段3（并发）：建 document（幂等锚点）+ 写分块
  * 幂等锚点：document 表中 KB+filename 已存在即跳过
- * 并发模式：复用 docProcessExecutor（每篇一个任务，CountDownLatch 汇聚，参照批量上传管道）
  */
 @Slf4j
 @Service
@@ -49,8 +51,11 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
 
     private static final int MAX_ERRORS_IN_RESPONSE = 20;
 
-    /** 单批并发处理超时（分钟）：每篇 CPU 嵌入约 1-2 分钟，50 篇并发 16 路需 5-8 分钟 */
+    /** 单批并发处理超时（分钟） */
     private static final int BATCH_TIMEOUT_MINUTES = 30;
+
+    /** 每次提交 Ollama 嵌入的文本块数（大批量摊薄请求开销） */
+    private static final int EMBED_BATCH_SIZE = 32;
 
     private final PaperMapper paperMapper;
 
@@ -82,6 +87,10 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
         this.ragService = ragService;
         this.paperPdfParser = paperPdfParser;
         this.docProcessExecutor = docProcessExecutor;
+    }
+
+    /** 单篇论文的解析结果（阶段1产出，内存暂存） */
+    private record ParsedPaper(Paper paper, long fileSize, List<PaperPdfParser.PdfChunk> chunks) {
     }
 
     @Override
@@ -127,14 +136,11 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
             }
         }
 
-        // 并发处理本批（每篇一个任务；计数与错误收集用并发安全结构）
-        AtomicInteger processed = new AtomicInteger();
-        AtomicInteger chunksCreated = new AtomicInteger();
         AtomicInteger failed = new AtomicInteger();
         AtomicInteger missing = new AtomicInteger();
         List<String> errors = new CopyOnWriteArrayList<>();
 
-        // 先同步筛掉目录中缺失的文件（不占用线程任务）
+        // 文件存在性预筛（不占任务）
         List<Paper> toProcess = new ArrayList<>();
         for (Paper paper : pending) {
             if (Files.isRegularFile(dir.resolve(paper.getFileName()))) {
@@ -144,36 +150,97 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
             }
         }
 
-        CountDownLatch latch = new CountDownLatch(toProcess.size());
+        // ---- 阶段1：并发解析（纯 CPU，快）----
+        List<ParsedPaper> parsed = new CopyOnWriteArrayList<>();
+        CountDownLatch parseLatch = new CountDownLatch(toProcess.size());
         for (Paper paper : toProcess) {
             docProcessExecutor.execute(() -> {
                 try {
-                    int chunks = importSinglePaper(kb.getId(), dir.resolve(paper.getFileName()), paper);
-                    if (chunks > 0) {
-                        processed.incrementAndGet();
-                        chunksCreated.addAndGet(chunks);
-                    } else {
+                    List<PaperPdfParser.PdfChunk> chunks = parsePdf(dir.resolve(paper.getFileName()));
+                    if (chunks.isEmpty()) {
                         failed.incrementAndGet();
                         addError(errors, paper, "PDF 无可提取文本");
+                    } else {
+                        parsed.add(new ParsedPaper(paper, Files.size(dir.resolve(paper.getFileName())), chunks));
                     }
                 } catch (Exception e) {
                     failed.incrementAndGet();
                     addError(errors, paper, e.getMessage());
-                    log.warn("论文全文导入失败 docId={} file={}", paper.getDocId(), paper.getFileName(), e);
+                    log.warn("论文 PDF 解析失败 docId={} file={}", paper.getDocId(), paper.getFileName(), e);
                 } finally {
-                    latch.countDown();
+                    parseLatch.countDown();
                 }
             });
         }
+        awaitLatch(parseLatch, "PDF 解析");
 
-        try {
-            if (!latch.await(BATCH_TIMEOUT_MINUTES, TimeUnit.MINUTES)) {
-                addError(errors, pending.get(0), "批次处理超时（" + BATCH_TIMEOUT_MINUTES + " 分钟）");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new BizException("论文全文导入被中断");
+        // ---- 阶段2：串行大批量嵌入（Ollama 端串行时的最优吞吐）----
+        List<String> allTexts = new ArrayList<>();
+        for (ParsedPaper p : parsed) {
+            p.chunks().forEach(c -> allTexts.add(c.content()));
         }
+        List<float[]> allEmbeddings = new ArrayList<>();
+        for (int start = 0; start < allTexts.size(); start += EMBED_BATCH_SIZE) {
+            List<String> batch = allTexts.subList(start, Math.min(allTexts.size(), start + EMBED_BATCH_SIZE));
+            allEmbeddings.addAll(ragService.embedBatch(batch));
+        }
+
+        // ---- 阶段3：并发落库（先建 document 幂等锚点，再写分块）----
+        AtomicInteger processed = new AtomicInteger();
+        AtomicInteger chunksCreated = new AtomicInteger();
+        CountDownLatch writeLatch = new CountDownLatch(parsed.size());
+        final List<float[]> embeddings = allEmbeddings;
+        int[] offsets = new int[parsed.size() + 1];
+        for (int i = 0; i < parsed.size(); i++) {
+            offsets[i + 1] = offsets[i] + parsed.get(i).chunks().size();
+        }
+        for (int idx = 0; idx < parsed.size(); idx++) {
+            final int taskIdx = idx;
+            ParsedPaper p = parsed.get(idx);
+            docProcessExecutor.execute(() -> {
+                try {
+                    Document document = Document.builder()
+                            .kbId(kb.getId())
+                            .filename(p.paper().getFileName())
+                            .filetype("pdf")
+                            .size(p.fileSize())
+                            .metadata(objectMapper.writeValueAsString(Map.of(
+                                    "docId", p.paper().getDocId(),
+                                    "title", p.paper().getTitle() == null ? "" : p.paper().getTitle(),
+                                    "sourceType", "paper")))
+                            .createdAt(LocalDateTime.now())
+                            .updatedAt(LocalDateTime.now())
+                            .build();
+                    documentMapper.insert(document);
+
+                    for (int i = 0; i < p.chunks().size(); i++) {
+                        PaperPdfParser.PdfChunk chunk = p.chunks().get(i);
+                        chunkBgeM3Mapper.insert(ChunkBgeM3.builder()
+                                .kbId(kb.getId())
+                                .docId(document.getId())
+                                .content(chunk.content())
+                                .metadata(objectMapper.writeValueAsString(Map.of(
+                                        "docId", p.paper().getDocId(),
+                                        "page", chunk.pageNumber(),
+                                        "fileName", p.paper().getFileName(),
+                                        "sourceType", "paper")))
+                                .embedding(embeddings.get(offsets[taskIdx] + i))
+                                .createdAt(LocalDateTime.now())
+                                .updatedAt(LocalDateTime.now())
+                                .build());
+                        chunksCreated.incrementAndGet();
+                    }
+                    processed.incrementAndGet();
+                } catch (Exception e) {
+                    failed.incrementAndGet();
+                    addError(errors, p.paper(), e.getMessage());
+                    log.warn("论文全文落库失败 docId={} file={}", p.paper().getDocId(), p.paper().getFileName(), e);
+                } finally {
+                    writeLatch.countDown();
+                }
+            });
+        }
+        awaitLatch(writeLatch, "分块落库");
 
         // 剩余估算：扣除已导入、本批成功与本批确认缺失（missing 换目录后重调可重试）
         int remaining = totalIncluded - existingByName.size() - processed.get() - missing.get();
@@ -191,48 +258,15 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
                 .build();
     }
 
-    /** 导入单篇论文（并发任务体）：解析→建 document→嵌入→逐块入库；返回分块数（0=无可提取文本） */
-    private int importSinglePaper(String kbId, Path pdf, Paper paper) throws Exception {
-        List<PaperPdfParser.PdfChunk> chunks = parsePdf(pdf);
-        if (chunks.isEmpty()) {
-            return 0;
+    private void awaitLatch(CountDownLatch latch, String stage) {
+        try {
+            if (!latch.await(BATCH_TIMEOUT_MINUTES, TimeUnit.MINUTES)) {
+                throw new BizException(stage + "阶段处理超时（" + BATCH_TIMEOUT_MINUTES + " 分钟）");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BizException("论文全文导入被中断");
         }
-
-        // 先建 document 记录（幂等锚点），分块挂其下
-        Document document = Document.builder()
-                .kbId(kbId)
-                .filename(paper.getFileName())
-                .filetype("pdf")
-                .size(Files.size(pdf))
-                .metadata(objectMapper.writeValueAsString(Map.of(
-                        "docId", paper.getDocId(),
-                        "title", paper.getTitle() == null ? "" : paper.getTitle(),
-                        "sourceType", "paper")))
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-        documentMapper.insert(document);
-
-        // 批量嵌入后逐块入库
-        List<String> texts = chunks.stream().map(PaperPdfParser.PdfChunk::content).toList();
-        List<float[]> embeddings = ragService.embedBatch(texts);
-        for (int i = 0; i < chunks.size(); i++) {
-            PaperPdfParser.PdfChunk chunk = chunks.get(i);
-            chunkBgeM3Mapper.insert(ChunkBgeM3.builder()
-                    .kbId(kbId)
-                    .docId(document.getId())
-                    .content(chunk.content())
-                    .metadata(objectMapper.writeValueAsString(Map.of(
-                            "docId", paper.getDocId(),
-                            "page", chunk.pageNumber(),
-                            "fileName", paper.getFileName(),
-                            "sourceType", "paper")))
-                    .embedding(embeddings.get(i))
-                    .createdAt(LocalDateTime.now())
-                    .updatedAt(LocalDateTime.now())
-                    .build());
-        }
-        return chunks.size();
     }
 
     private List<PaperPdfParser.PdfChunk> parsePdf(Path pdf) throws IOException {
@@ -249,7 +283,7 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
         }
         KnowledgeBase kb = KnowledgeBase.builder()
                 .name(PAPER_KB_NAME)
-                .description("低轨卫星星座网络有效研究论文全文（included 论文，PDF 按页切分，bge-m3 嵌入）")
+                .description("低轨卫星星座网络有效研究论文全文（included 论文，PDF 按页切分+章节过滤，bge-m3 嵌入）")
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
