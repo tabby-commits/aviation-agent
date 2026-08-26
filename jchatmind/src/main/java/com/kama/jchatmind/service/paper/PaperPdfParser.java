@@ -11,8 +11,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 论文 PDF 解析器：按页提取文本，超长页二次切分
- * 切分单位为页（PDF 无可靠章节标记），页码写入分块元数据，与参数证据的页码可对齐回查
+ * 论文 PDF 解析器：按页提取文本 → 章节状态机过滤（背景/综述类章节不嵌入）→ 超长页二次切分
+ * 切分单位为页，页码写入分块元数据，与参数证据的页码可对齐回查；
+ * 章节状态跨页保持（如 Introduction 跨页时后续页继续排除，直到出现保留类标题）；
+ * 全文无任何可识别标题时不过滤（兜底保留全文）。
  */
 @Component
 public class PaperPdfParser {
@@ -29,20 +31,41 @@ public class PaperPdfParser {
         try (PDDocument doc = Loader.loadPDF(bytes)) {
             PDFTextStripper stripper = new PDFTextStripper();
             int pageCount = doc.getNumberOfPages();
+
+            PaperSectionFilter.SectionState state = PaperSectionFilter.SectionState.KEPT;
+
             for (int page = 1; page <= pageCount; page++) {
                 stripper.setStartPage(page);
                 stripper.setEndPage(page);
-                String text = stripper.getText(doc).trim();
-                if (text.isEmpty()) {
+                String text = stripper.getText(doc);
+                if (text == null || text.isBlank()) {
                     continue; // 空白页（图表页）跳过
                 }
-                if (text.length() <= MAX_CHUNK_CHARS) {
-                    chunks.add(new PdfChunk(page, text));
+
+                // 逐行扫描：标题行切换章节状态，非排除态的行进入本页保留文本
+                StringBuilder kept = new StringBuilder();
+                for (String line : text.split("\r?\n", -1)) {
+                    PaperSectionFilter.SectionState verdict = PaperSectionFilter.classifyHeading(line);
+                    if (verdict != null) {
+                        state = verdict;
+                        continue; // 标题行本身不入块
+                    }
+                    if (state == PaperSectionFilter.SectionState.KEPT) {
+                        kept.append(line).append('\n');
+                    }
+                }
+
+                String keptText = kept.toString().trim();
+                if (keptText.isEmpty()) {
+                    continue;
+                }
+                if (keptText.length() <= MAX_CHUNK_CHARS) {
+                    chunks.add(new PdfChunk(page, keptText));
                 } else {
                     // 超长页二次切分，页码保持原页
-                    for (int start = 0; start < text.length(); start += MAX_CHUNK_CHARS) {
+                    for (int start = 0; start < keptText.length(); start += MAX_CHUNK_CHARS) {
                         chunks.add(new PdfChunk(page,
-                                text.substring(start, Math.min(text.length(), start + MAX_CHUNK_CHARS))));
+                                keptText.substring(start, Math.min(keptText.length(), start + MAX_CHUNK_CHARS))));
                     }
                 }
             }
