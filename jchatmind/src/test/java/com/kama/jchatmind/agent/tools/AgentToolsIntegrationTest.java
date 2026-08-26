@@ -58,16 +58,16 @@ public class AgentToolsIntegrationTest {
     }
 
     /**
-     * 数据限制记录：EASC 归属集（4488）与筛选有效论文集（557）来自小论文两条独立管线，当前零交集，
-     * 分类限定在 included 集上结果为 0 —— 行为正确，数据覆盖问题记录于验证文档。
+     * 归属集（4488，EASC 语料）与有效论文集（557）来自小论文两条筛选管线，
+     * 交集为部分覆盖（当前快照约 246 篇），分类限定缩小论文集且行为正确。
      */
     @Test
     public void bibliometricScopedByTaxonomyBehavesCorrectly() {
         BibliometricResult all = bibliometricFacadeService.analyze(1993, 2026, null);
         BibliometricResult scoped = bibliometricFacadeService.analyze(1993, 2026, "space-computing");
 
-        assertTrue(scoped.getTotalPapers() <= all.getTotalPapers());
-        assertEquals(0, scoped.getTotalPapers(), "当前数据下归属集与有效论文集零交集，限定结果为 0");
+        assertTrue(scoped.getTotalPapers() > 0, "归属与有效论文存在部分交集");
+        assertTrue(scoped.getTotalPapers() < all.getTotalPapers(), "分类限定应缩小论文集");
     }
 
     @Test
