@@ -5,6 +5,7 @@ import com.kama.jchatmind.exception.BizException;
 import com.kama.jchatmind.mapper.ChunkBgeM3Mapper;
 import com.kama.jchatmind.mapper.DocumentMapper;
 import com.kama.jchatmind.mapper.KnowledgeBaseMapper;
+import com.kama.jchatmind.mapper.ParameterEvidenceMapper;
 import com.kama.jchatmind.mapper.PaperMapper;
 import com.kama.jchatmind.model.entity.ChunkBgeM3;
 import com.kama.jchatmind.model.entity.Document;
@@ -28,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
@@ -35,10 +37,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 论文全文入库实现（两阶段流水，CPU 嵌入瓶颈下的最优吞吐结构）：
- * 阶段1（并发）：解析 PDF + 章节过滤，结果暂存内存（不建 document，崩溃无中间态）
- * 阶段2（串行）：全部待嵌入文本按批提交 embedBatch —— Ollama 端串行时，
- *               少量大请求远优于多个并发小请求（避免排队与过载）
+ * 论文全文入库实现（核心页策略 + 三阶段流水，CPU 嵌入瓶颈下的务实解）：
+ * 嵌入范围 = 每篇首页块（标题+摘要，章节过滤后天然保留）+ 参数证据所在页的块
+ * （用户决策"背景/综述不入库"的延伸：CPU 嵌入 22s/千字符块下全量嵌入需 28 小时，
+ * 核心页约 1000 块 × 6.6s（Ollama 并行4）≈ 110 分钟）
+ * 阶段1（并发）：解析 PDF + 章节过滤 + 核心页筛选，暂存内存（不建 document，崩溃无中间态）
+ * 阶段2（并行4路）：大批量嵌入（配合 OLLAMA_NUM_PARALLEL=4）
  * 阶段3（并发）：建 document（幂等锚点）+ 写分块
  * 幂等锚点：document 表中 KB+filename 已存在即跳过
  */
@@ -52,10 +56,13 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
     private static final int MAX_ERRORS_IN_RESPONSE = 20;
 
     /** 单批并发处理超时（分钟） */
-    private static final int BATCH_TIMEOUT_MINUTES = 30;
+    private static final int BATCH_TIMEOUT_MINUTES = 45;
 
-    /** 每次提交 Ollama 嵌入的文本块数（大批量摊薄请求开销） */
-    private static final int EMBED_BATCH_SIZE = 32;
+    /** 每次提交 Ollama 嵌入的文本块数 */
+    private static final int EMBED_BATCH_SIZE = 16;
+
+    /** 嵌入阶段并行请求数（对齐 OLLAMA_NUM_PARALLEL=4） */
+    private static final int EMBED_PARALLELISM = 4;
 
     private final PaperMapper paperMapper;
 
@@ -64,6 +71,8 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
     private final DocumentMapper documentMapper;
 
     private final ChunkBgeM3Mapper chunkBgeM3Mapper;
+
+    private final ParameterEvidenceMapper parameterEvidenceMapper;
 
     private final RagService ragService;
 
@@ -77,6 +86,7 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
                                   KnowledgeBaseMapper knowledgeBaseMapper,
                                   DocumentMapper documentMapper,
                                   ChunkBgeM3Mapper chunkBgeM3Mapper,
+                                  ParameterEvidenceMapper parameterEvidenceMapper,
                                   RagService ragService,
                                   PaperPdfParser paperPdfParser,
                                   @Qualifier("docProcessExecutor") Executor docProcessExecutor) {
@@ -84,6 +94,7 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
         this.knowledgeBaseMapper = knowledgeBaseMapper;
         this.documentMapper = documentMapper;
         this.chunkBgeM3Mapper = chunkBgeM3Mapper;
+        this.parameterEvidenceMapper = parameterEvidenceMapper;
         this.ragService = ragService;
         this.paperPdfParser = paperPdfParser;
         this.docProcessExecutor = docProcessExecutor;
@@ -150,18 +161,31 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
             }
         }
 
-        // ---- 阶段1：并发解析（纯 CPU，快）----
+        // 参数证据页映射（核心页策略：docId → 证据所在页码集合）
+        Map<String, Set<Integer>> evidencePages = new LinkedHashMap<>();
+        for (Map<String, Object> row : parameterEvidenceMapper.selectDocPages()) {
+            String docId = String.valueOf(row.get("docid"));
+            Object page = row.get("pagenumber");
+            if (docId != null && page instanceof Number) {
+                evidencePages.computeIfAbsent(docId, k -> new java.util.LinkedHashSet<>())
+                        .add(((Number) page).intValue());
+            }
+        }
+
+        // ---- 阶段1：并发解析 + 章节过滤 + 核心页筛选（首页块 + 参数证据页块）----
         List<ParsedPaper> parsed = new CopyOnWriteArrayList<>();
         CountDownLatch parseLatch = new CountDownLatch(toProcess.size());
         for (Paper paper : toProcess) {
             docProcessExecutor.execute(() -> {
                 try {
-                    List<PaperPdfParser.PdfChunk> chunks = parsePdf(dir.resolve(paper.getFileName()));
-                    if (chunks.isEmpty()) {
+                    List<PaperPdfParser.PdfChunk> all = parsePdf(dir.resolve(paper.getFileName()));
+                    if (all.isEmpty()) {
                         failed.incrementAndGet();
                         addError(errors, paper, "PDF 无可提取文本");
                     } else {
-                        parsed.add(new ParsedPaper(paper, Files.size(dir.resolve(paper.getFileName())), chunks));
+                        List<PaperPdfParser.PdfChunk> core = filterCoreChunks(
+                                all, evidencePages.getOrDefault(paper.getDocId(), Set.of()));
+                        parsed.add(new ParsedPaper(paper, Files.size(dir.resolve(paper.getFileName())), core));
                     }
                 } catch (Exception e) {
                     failed.incrementAndGet();
@@ -174,22 +198,46 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
         }
         awaitLatch(parseLatch, "PDF 解析");
 
-        // ---- 阶段2：串行大批量嵌入（Ollama 端串行时的最优吞吐）----
+        // ---- 阶段2：并行嵌入（批次任务提交线程池，信号量对齐 OLLAMA_NUM_PARALLEL=4）----
         List<String> allTexts = new ArrayList<>();
         for (ParsedPaper p : parsed) {
             p.chunks().forEach(c -> allTexts.add(c.content()));
         }
-        List<float[]> allEmbeddings = new ArrayList<>();
+        List<List<String>> batches = new ArrayList<>();
         for (int start = 0; start < allTexts.size(); start += EMBED_BATCH_SIZE) {
-            List<String> batch = allTexts.subList(start, Math.min(allTexts.size(), start + EMBED_BATCH_SIZE));
-            allEmbeddings.addAll(ragService.embedBatch(batch));
+            batches.add(new ArrayList<>(allTexts.subList(start, Math.min(allTexts.size(), start + EMBED_BATCH_SIZE))));
+        }
+        List<float[]> embeddings = java.util.Collections.synchronizedList(new ArrayList<>(allTexts.size()));
+        CountDownLatch embedLatch = new CountDownLatch(batches.size());
+        java.util.concurrent.Semaphore embedPermits = new java.util.concurrent.Semaphore(EMBED_PARALLELISM);
+        for (List<String> batch : batches) {
+            docProcessExecutor.execute(() -> {
+                try {
+                    embedPermits.acquire();
+                    try {
+                        embeddings.addAll(ragService.embedBatch(batch));
+                    } finally {
+                        embedPermits.release();
+                    }
+                } catch (Exception e) {
+                    log.error("嵌入批次失败（{} 块）", batch.size(), e);
+                } finally {
+                    embedLatch.countDown();
+                }
+            });
+        }
+        awaitLatch(embedLatch, "批量嵌入");
+        // 嵌入失败会导致 embeddings 数量少于文本数——按序对齐不可靠时放弃本批落库，交由重试
+        if (embeddings.size() != allTexts.size()) {
+            throw new BizException("嵌入数量不一致（期望 " + allTexts.size() + "，实际 " + embeddings.size()
+                    + "），本批已放弃，可重试");
         }
 
         // ---- 阶段3：并发落库（先建 document 幂等锚点，再写分块）----
         AtomicInteger processed = new AtomicInteger();
         AtomicInteger chunksCreated = new AtomicInteger();
         CountDownLatch writeLatch = new CountDownLatch(parsed.size());
-        final List<float[]> embeddings = allEmbeddings;
+        final List<float[]> embeddingList = embeddings;
         int[] offsets = new int[parsed.size() + 1];
         for (int i = 0; i < parsed.size(); i++) {
             offsets[i + 1] = offsets[i] + parsed.get(i).chunks().size();
@@ -224,7 +272,7 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
                                         "page", chunk.pageNumber(),
                                         "fileName", p.paper().getFileName(),
                                         "sourceType", "paper")))
-                                .embedding(embeddings.get(offsets[taskIdx] + i))
+                                .embedding(embeddingList.get(offsets[taskIdx] + i))
                                 .createdAt(LocalDateTime.now())
                                 .updatedAt(LocalDateTime.now())
                                 .build());
@@ -256,6 +304,26 @@ public class PaperCorpusServiceImpl implements PaperCorpusService {
                 .remaining(Math.max(remaining, 0))
                 .errors(errors.stream().limit(MAX_ERRORS_IN_RESPONSE).toList())
                 .build();
+    }
+
+    /**
+     * 核心页筛选：首页块（标题+摘要，章节过滤后首个保留块）+ 参数证据页的所有块
+     * evidencePages 为空时仅保留首页块（无参数证据的论文）
+     */
+    private List<PaperPdfParser.PdfChunk> filterCoreChunks(List<PaperPdfParser.PdfChunk> all,
+                                                           Set<Integer> evidencePages) {
+        if (all.isEmpty()) {
+            return all;
+        }
+        int firstPage = all.get(0).pageNumber();
+        List<PaperPdfParser.PdfChunk> core = new ArrayList<>();
+        for (PaperPdfParser.PdfChunk chunk : all) {
+            boolean isFirstPage = chunk.pageNumber() == firstPage;
+            if (isFirstPage || evidencePages.contains(chunk.pageNumber())) {
+                core.add(chunk);
+            }
+        }
+        return core;
     }
 
     private void awaitLatch(CountDownLatch latch, String stage) {

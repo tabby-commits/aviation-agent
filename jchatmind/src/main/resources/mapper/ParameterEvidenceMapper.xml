@@ -136,4 +136,10 @@
         FROM parameter_evidence
         WHERE decision_id LIKE CONCAT(#{prefix}, '%')
     </delete>
+
+    <select id="selectDocPages" resultType="map">
+        SELECT DISTINCT doc_id AS docId, page_number AS pageNumber
+        FROM parameter_evidence
+        WHERE page_number IS NOT NULL
+    </select>
 </mapper>

@@ -27,4 +27,7 @@ public interface ParameterEvidenceMapper {
 
     /** 删除 decision_id 以 prefix 开头的记录（测试清理用） */
     int deleteByDecisionIdPrefix(@Param("prefix") String prefix);
+
+    /** 全表 doc_id + page_number 映射（核心页嵌入策略：论文全文只嵌摘要页+参数证据页） */
+    List<java.util.Map<String, Object>> selectDocPages();
 }

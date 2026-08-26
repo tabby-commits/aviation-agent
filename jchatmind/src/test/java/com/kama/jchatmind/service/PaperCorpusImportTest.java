@@ -58,6 +58,9 @@ public class PaperCorpusImportTest {
     @Autowired
     private ChunkBgeM3Mapper chunkBgeM3Mapper;
 
+    @Autowired
+    private com.kama.jchatmind.mapper.ParameterEvidenceMapper parameterEvidenceMapper;
+
     private Path tmpDir;
 
     @BeforeAll
@@ -100,6 +103,7 @@ public class PaperCorpusImportTest {
     }
 
     private void cleanupTestData() {
+        parameterEvidenceMapper.deleteByDecisionIdPrefix("d_TEST-CORPUS");
         KnowledgeBase kb = knowledgeBaseMapper.selectByName("低轨卫星星座论文全文");
         if (kb != null) {
             for (Document doc : documentMapper.selectByKbId(kb.getId())) {
@@ -115,10 +119,17 @@ public class PaperCorpusImportTest {
     @Test
     public void importCorpusShouldChunkEmbedAndIndex() {
         // limit 取大值全量扫描：真实库中 557 篇 included 在临时目录缺失（missing），测试论文成功处理
+        // 预置参数证据：第 2 页为核心页（首页块 + 参数页块均保留）
+        parameterEvidenceMapper.upsert(com.kama.jchatmind.model.entity.ParameterEvidence.builder()
+                .decisionId("d_TEST-CORPUS-P1").docId(TEST_DOC_ID)
+                .pageNumber(2).parameterFamily("latency and delay")
+                .reviewStatus("reviewed_rule").firstAuthorCountry("US")
+                .title("Corpus Import Test Paper").build());
+
         CorpusImportResponse response = paperCorpusService.importCorpus(tmpDir.toString(), 2000);
 
         assertEquals(1, response.getProcessed());
-        assertTrue(response.getChunksCreated() >= 2, "2 页 PDF 至少 2 块");
+        assertTrue(response.getChunksCreated() >= 2, "首页块 + 参数页块（第2页）");
         assertEquals(0, response.getFailed());
 
         // KB 自动创建

@@ -19,8 +19,8 @@ import java.util.List;
 @Component
 public class PaperPdfParser {
 
-    /** 单块最大字符数（bge-m3 嵌入安全窗口，中文论文单页通常 3000-5000 字符） */
-    public static final int MAX_CHUNK_CHARS = 4000;
+    /** 单块最大字符数（CPU 嵌入耗时 ∝ 块长，2000 字符为质量/耗时平衡点） */
+    public static final int MAX_CHUNK_CHARS = 2000;
 
     public record PdfChunk(int pageNumber, String content) {
     }
