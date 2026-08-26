@@ -121,6 +121,29 @@
         WHERE doc_id = #{paper.docId}
     </update>
 
+    <select id="selectIncludedWithFileName" resultMap="BaseResultMap">
+        SELECT id,
+               doc_id, source_db, title,
+               abstract_text, authors::text AS authors, affiliations::text AS affiliations,
+               first_author, first_author_affiliation, first_author_country,
+               country_evidence, country_confidence, publish_year,
+               journal, doc_type, cited_count,
+               doi, keywords, screening_status,
+               exclude_reason, file_name, created_at, updated_at
+        FROM paper
+        WHERE screening_status = 'included'
+          AND file_name IS NOT NULL
+        ORDER BY doc_id ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countIncludedWithFileName" resultType="int">
+        SELECT COUNT(*)
+        FROM paper
+        WHERE screening_status = 'included'
+          AND file_name IS NOT NULL
+    </select>
+
     <sql id="Query_Condition">
         <where>
             <if test="sourceDb != null and sourceDb != ''">

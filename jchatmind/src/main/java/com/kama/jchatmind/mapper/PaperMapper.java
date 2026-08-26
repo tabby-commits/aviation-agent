@@ -27,6 +27,11 @@ public interface PaperMapper {
     /** 按筛选结论更新（screening_status/国别/证据/置信度/文件名/排除原因，空值不覆盖），返回影响行数 */
     int updateScreening(@Param("paper") Paper paper);
 
+    /** 有效（included）且有文件名的论文，按 doc_id 稳定排序（论文全文导入清单） */
+    List<Paper> selectIncludedWithFileName(@Param("limit") int limit, @Param("offset") int offset);
+
+    int countIncludedWithFileName();
+
     /** 条件分页查询（按 publish_year DESC, doc_id ASC 排序） */
     List<Paper> selectByCondition(PaperQueryRequest query);
 

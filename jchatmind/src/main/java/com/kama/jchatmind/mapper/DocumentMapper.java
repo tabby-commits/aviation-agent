@@ -2,6 +2,7 @@ package com.kama.jchatmind.mapper;
 
 import com.kama.jchatmind.model.entity.Document;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -20,6 +21,9 @@ public interface DocumentMapper {
     List<Document> selectAll();
 
     List<Document> selectByKbId(String kbId);
+
+    /** 按知识库与文件名查重（论文全文导入幂等锚点） */
+    Document selectByKbIdAndFilename(@Param("kbId") String kbId, @Param("filename") String filename);
 
     int deleteById(String id);
 

@@ -50,6 +50,19 @@
         WHERE id = CAST(#{id} AS uuid)
     </select>
 
+    <select id="selectByName" resultMap="BaseResultMap">
+        SELECT
+            id,
+            name,
+            description,
+            metadata::text AS metadata,
+            created_at,
+            updated_at
+        FROM knowledge_base
+        WHERE name = #{name}
+        LIMIT 1
+    </select>
+
     <select id="selectAll" resultMap="BaseResultMap">
         SELECT
             id,

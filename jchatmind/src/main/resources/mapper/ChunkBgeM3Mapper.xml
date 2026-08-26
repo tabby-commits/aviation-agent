@@ -43,7 +43,7 @@
         VALUES (CAST(#{kbId} AS uuid),
                 CAST(#{docId} AS uuid),
                 #{content},
-                #{metadata},
+                CAST(#{metadata} AS jsonb),
                 #{embedding}::vector,
                 #{createdAt},
                 #{updatedAt})

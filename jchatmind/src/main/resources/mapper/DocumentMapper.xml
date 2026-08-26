@@ -88,6 +88,22 @@
         ORDER BY updated_at DESC
     </select>
 
+    <select id="selectByKbIdAndFilename" resultMap="BaseResultMap">
+        SELECT
+            id,
+            kb_id,
+            filename,
+            filetype,
+            size,
+            metadata::text AS metadata,
+            created_at,
+            updated_at
+        FROM document
+        WHERE kb_id = CAST(#{kbId} AS uuid)
+          AND filename = #{filename}
+        LIMIT 1
+    </select>
+
     <delete id="deleteById">
         DELETE FROM document WHERE id = CAST(#{id} AS uuid)
     </delete>

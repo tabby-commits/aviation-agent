@@ -2,12 +2,14 @@ package com.kama.jchatmind.controller;
 
 import com.kama.jchatmind.model.common.ApiResponse;
 import com.kama.jchatmind.model.request.PaperQueryRequest;
+import com.kama.jchatmind.model.response.CorpusImportResponse;
 import com.kama.jchatmind.model.response.GetPaperResponse;
 import com.kama.jchatmind.model.response.GetPapersResponse;
 import com.kama.jchatmind.model.response.MembershipImportResponse;
 import com.kama.jchatmind.model.response.PaperImportResponse;
 import com.kama.jchatmind.model.response.PaperImportStatsResponse;
 import com.kama.jchatmind.model.response.PaperScreeningImportResponse;
+import com.kama.jchatmind.service.PaperCorpusService;
 import com.kama.jchatmind.service.PaperFacadeService;
 import lombok.AllArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,6 +29,8 @@ import org.springframework.web.multipart.MultipartFile;
 public class PaperController {
 
     private final PaperFacadeService paperFacadeService;
+
+    private final PaperCorpusService paperCorpusService;
 
     // 导入论文元数据（幂等，source=WOS/CNKI）
     @PostMapping("/papers/import/metadata")
@@ -83,5 +87,13 @@ public class PaperController {
     @GetMapping("/papers/import/stats")
     public ApiResponse<PaperImportStatsResponse> getImportStats() {
         return ApiResponse.success(paperFacadeService.getImportStats());
+    }
+
+    // 批量导入论文全文到 RAG（同步分批，幂等；循环调用直至 remaining=0）
+    @PostMapping("/papers/import/corpus")
+    public ApiResponse<CorpusImportResponse> importCorpus(
+            @RequestParam("pdfDir") String pdfDir,
+            @RequestParam(defaultValue = "20") int limit) {
+        return ApiResponse.success(paperCorpusService.importCorpus(pdfDir, limit));
     }
 }
