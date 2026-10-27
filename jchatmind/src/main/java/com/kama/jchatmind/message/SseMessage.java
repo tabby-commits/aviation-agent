@@ -38,6 +38,8 @@ public class SseMessage {
         private String toolName;
         private String taskId;
         private ChartArtifact chart;
+        // REPORT_STEP 使用：{note: 人可读摘要, data: 裁剪后的该步输入输出}
+        private Object detail;
     }
 
     @Data
@@ -69,5 +71,8 @@ public class SseMessage {
         AGENTIC_DONE,
         AGENT_HOOK_RECOVERY,
         CHART_GENERATED,
+        REPORT_STAGE,
+        /** 报告流水线单步事件：payload.toolName=阶段名，payload.taskId、payload.step、payload.detail（裁剪 JSON） */
+        REPORT_STEP,
     }
 }

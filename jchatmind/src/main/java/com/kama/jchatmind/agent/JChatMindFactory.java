@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kama.jchatmind.agent.tools.Tool;
 import com.kama.jchatmind.config.ChatClientRegistry;
+import com.kama.jchatmind.config.AgenticSearchProperties;
 import com.kama.jchatmind.converter.AgentConverter;
 import com.kama.jchatmind.converter.ChatMessageConverter;
 import com.kama.jchatmind.converter.KnowledgeBaseConverter;
@@ -47,6 +48,7 @@ public class JChatMindFactory {
     private final ChatMessageConverter chatMessageConverter;
     private final ObjectMapper objectMapper;
     private final ContextManagementService contextManagementService;
+    private final AgenticSearchProperties agenticSearchProperties;
 
     // 运行时 Agent 配置
     private AgentDTO agentConfig;
@@ -62,7 +64,8 @@ public class JChatMindFactory {
             ChatMessageFacadeService chatMessageFacadeService,
             ChatMessageConverter chatMessageConverter,
             ObjectMapper objectMapper,
-            ContextManagementService contextManagementService
+            ContextManagementService contextManagementService,
+            AgenticSearchProperties agenticSearchProperties
     ) {
         this.chatClientRegistry = chatClientRegistry;
         this.sseService = sseService;
@@ -75,6 +78,7 @@ public class JChatMindFactory {
         this.chatMessageConverter = chatMessageConverter;
         this.objectMapper = objectMapper;
         this.contextManagementService = contextManagementService;
+        this.agenticSearchProperties = agenticSearchProperties;
     }
 
     private Agent loadAgent(String agentId) {
@@ -192,7 +196,12 @@ public class JChatMindFactory {
 
     private List<Tool> resolveRuntimeTools(AgentDTO agentConfig) {
         // 固定工具（系统强制）
-        List<Tool> runtimeTools = new ArrayList<>(toolFacadeService.getFixedTools());
+        boolean hasKnowledgeBases = agentConfig.getAllowedKbs() != null
+                && !agentConfig.getAllowedKbs().isEmpty();
+        List<Tool> runtimeTools = new ArrayList<>(selectFixedTools(
+                toolFacadeService.getFixedTools(),
+                hasKnowledgeBases,
+                agenticSearchProperties.isEnabled()));
 
         // 可选工具（按 Agent 配置）
         List<String> allowedToolNames = agentConfig.getAllowedTools();
@@ -211,6 +220,15 @@ public class JChatMindFactory {
             }
         }
         return runtimeTools;
+    }
+
+    static List<Tool> selectFixedTools(List<Tool> fixedTools,
+                                       boolean hasKnowledgeBases,
+                                       boolean agenticSearchEnabled) {
+        return fixedTools.stream()
+                .filter(tool -> hasKnowledgeBases || !"KnowledgeTool".equals(tool.getName()))
+                .filter(tool -> agenticSearchEnabled || !"delegateSearchTask".equals(tool.getName()))
+                .toList();
     }
 
     public List<ToolCallback> buildToolCallbacksFromTools(List<Tool> runtimeTools) {

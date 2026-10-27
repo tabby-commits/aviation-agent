@@ -39,6 +39,9 @@ public class BibliometricResult {
         /** 指标(12) 国际合作论文比例 ICR = N_IC/N_F（百分比） */
         private double internationalRatio;
 
+        /** 指标(12) 主要合作伙伴（国家代码→共同署名论文数） */
+        private Map<String, Long> collaborationPartnerCounts;
+
         /** 指标(10) 高被引论文数量 HC（Σ w_ic·h_i，前 10% 含并列分数分配） */
         private double highCitedCount;
 
@@ -62,6 +65,12 @@ public class BibliometricResult {
 
         /** 指标(16) 有效机构数 1/HHI */
         private double effectiveInstitutions;
+
+        /** 至少解析出一个本国机构地址的论文数 */
+        private long addressParsedPaperCount;
+
+        /** 地址解析覆盖率 = addressParsedPaperCount / fullCount（百分比） */
+        private double addressCoverageRatio;
     }
 
     @Data

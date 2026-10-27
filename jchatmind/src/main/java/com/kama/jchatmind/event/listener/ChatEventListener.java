@@ -7,6 +7,7 @@ import com.kama.jchatmind.agent.search.SearchIntentRouter;
 import com.kama.jchatmind.config.AgenticSearchProperties;
 import com.kama.jchatmind.event.ChatEvent;
 import com.kama.jchatmind.message.SseMessage;
+import com.kama.jchatmind.report.ReportConversationService;
 import com.kama.jchatmind.service.SseService;
 import lombok.AllArgsConstructor;
 import org.springframework.context.event.EventListener;
@@ -21,10 +22,14 @@ public class ChatEventListener {
     private final SearchIntentRouter searchIntentRouter;
     private final AgenticSearchProperties agenticSearchProperties;
     private final SseService sseService;
+    private final ReportConversationService reportConversationService;
 
     @Async
     @EventListener
     public void handle(ChatEvent event) {
+        if (reportConversationService.handleIfResearch(event)) {
+            return;
+        }
         // 创建一个 Agent 实例处理聊天事件
         SearchIntentDecision decision = searchIntentRouter.route(event.getUserInput(), null);
         emitRouting(event.getSessionId(), decision);

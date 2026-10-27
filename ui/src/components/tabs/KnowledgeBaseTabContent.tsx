@@ -1,8 +1,8 @@
-import React, { useMemo } from "react";
-import { Button, Divider } from "antd";
-import { PlusOutlined, BookOutlined } from "@ant-design/icons";
+import React from "react";
+import { useParams } from "react-router-dom";
+import { Button } from "antd";
+import { PlusOutlined, DatabaseOutlined } from "@ant-design/icons";
 import type { KnowledgeBase } from "../../types";
-import { getKnowledgeBaseEmoji } from "../../utils";
 
 interface KnowledgeBaseTabContentProps {
   knowledgeBases: KnowledgeBase[];
@@ -15,13 +15,9 @@ const KnowledgeBaseTabContent: React.FC<KnowledgeBaseTabContentProps> = ({
   onCreateKnowledgeBaseClick,
   onSelectKnowledgeBase,
 }) => {
-  // 为每个知识库生成 emoji
-  const knowledgeBasesWithEmoji = useMemo(() => {
-    return knowledgeBases.map((kb) => ({
-      ...kb,
-      emoji: getKnowledgeBaseEmoji(kb.knowledgeBaseId),
-    }));
-  }, [knowledgeBases]);
+  const { knowledgeBaseId: activeKbId } = useParams<{
+    knowledgeBaseId: string;
+  }>();
 
   return (
     <div className="flex flex-col h-full">
@@ -34,39 +30,49 @@ const KnowledgeBaseTabContent: React.FC<KnowledgeBaseTabContentProps> = ({
       >
         新建情报库
       </Button>
-      <Divider />
-      <div className="flex-1 overflow-y-scroll workspace-scrollbar bg-slate-50/80 border border-slate-200/80 rounded-lg">
+      <div className="h-3" />
+      <div className="flex-1 overflow-y-auto workspace-scrollbar console-list">
         {knowledgeBases.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400">
-            <BookOutlined className="text-4xl mb-2" />
-            <p className="text-sm">暂无情报库</p>
-            <p className="text-xs mt-1">点击上方按钮创建资料来源</p>
+          <div className="flex flex-col items-center justify-center h-full text-slate-500">
+            <DatabaseOutlined className="text-3xl mb-2 text-slate-600" />
+            <p className="text-sm text-slate-400">暂无情报库</p>
+            <p className="tele mt-2 text-slate-500">REGISTER A SOURCE</p>
           </div>
         ) : (
           <div className="space-y-1.5 p-1.5">
-            {knowledgeBasesWithEmoji.map((kb) => (
-              <div
-                key={kb.knowledgeBaseId}
-                onClick={() => onSelectKnowledgeBase?.(kb.knowledgeBaseId)}
-                className="w-full px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 list-item-surface"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0 text-lg mt-0.5">
-                    {kb.emoji}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-slate-900 truncate">
-                      {kb.name}
+            {knowledgeBases.map((kb) => {
+              const isActive = kb.knowledgeBaseId === activeKbId;
+              return (
+                <div
+                  key={kb.knowledgeBaseId}
+                  onClick={() => onSelectKnowledgeBase?.(kb.knowledgeBaseId)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter")
+                      onSelectKnowledgeBase?.(kb.knowledgeBaseId);
+                  }}
+                  tabIndex={0}
+                  className={`console-row w-full px-3 py-2.5 cursor-pointer ${isActive ? "is-active" : ""}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`icon-tile w-8 h-8 mt-0.5 ${isActive ? "text-flare" : "text-telemetry"}`}
+                    >
+                      <DatabaseOutlined />
                     </div>
-                    {kb.description && (
-                      <div className="text-xs text-slate-500 mt-1 line-clamp-2">
-                        {kb.description}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-slate-100 truncate text-[13.5px]">
+                        {kb.name}
                       </div>
-                    )}
+                      {kb.description && (
+                        <div className="text-xs text-slate-400 mt-0.5 line-clamp-2">
+                          {kb.description}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

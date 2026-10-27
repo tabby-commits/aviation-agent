@@ -15,7 +15,7 @@ public class MultiChatClientConfig {
     }
 
     // zhipuai
-    @Bean("glm-4.6")
+    @Bean("GLM-5.3")
     public ChatClient zhiPuAiChatClient(ZhiPuAiChatModel zhiPuAiChatModel) {
         return ChatClient.create(zhiPuAiChatModel);
     }

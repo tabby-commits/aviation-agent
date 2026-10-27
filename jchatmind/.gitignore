@@ -1766,3 +1766,7 @@ src/main/resources/application-local.yaml
 /.m2/repository/org/yaml/snakeyaml/2.4/snakeyaml-2.4.jar.sha1
 /.m2/repository/org/yaml/snakeyaml/2.4/snakeyaml-2.4.pom
 /.m2/repository/org/yaml/snakeyaml/2.4/snakeyaml-2.4.pom.sha1
+
+### 依赖与构建产物(全仓库通用) ###
+**/node_modules/
+ui/dist/

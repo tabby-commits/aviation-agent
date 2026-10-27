@@ -135,7 +135,11 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                 <React.Fragment key={item.key}>
                   <div
                     onClick={() => setSelectedKey(item.key)}
-                    className={`px-3 py-2 rounded-lg hover:bg-gray-100 ${isSelected ? "bg-gray-100 text-gray-900 font-medium" : "text-gray-600"}`}
+                    className={`px-3 py-2 rounded-lg transition-colors hover:bg-brand-surface-muted ${
+                      isSelected
+                        ? "bg-brand-surface-muted text-signal-deep font-medium"
+                        : "text-gray-600"
+                    }`}
                   >
                     {item.label}
                   </div>

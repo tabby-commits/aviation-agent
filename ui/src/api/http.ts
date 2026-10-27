@@ -10,10 +10,30 @@ export interface ApiResponse<T = unknown> {
 // 请求配置选项
 export interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | null | undefined>;
+  /** 为 true 时，HTTP 401 不自动跳转登录页（供登录态探测接口使用） */
+  skipAuthRedirect?: boolean;
 }
 
-// API 基础路径（可以根据环境变量配置）
-export const BASE_URL = "http://localhost:8080/api";
+// API 基础路径：开发模式直连本机后端；生产构建用同源相对路径（nginx 反代 /api 与 /sse 到 8080）
+export const BASE_URL = import.meta.env.DEV
+  ? "http://localhost:8080/api"
+  : "/api";
+
+// SSE 等非 /api 端点的源（开发为本机后端源，生产为同源）
+export const API_ORIGIN = import.meta.env.DEV
+  ? "http://localhost:8080"
+  : "";
+
+/**
+ * 会话失效时跳转登录页，并携带当前路径供登录后回跳
+ */
+export function redirectToLogin() {
+  if (window.location.pathname === "/login") return;
+  const redirect = encodeURIComponent(
+    window.location.pathname + window.location.search,
+  );
+  window.location.href = `/login?redirect=${redirect}`;
+}
 
 /**
  * 构建完整的 URL（包含查询参数）
@@ -63,7 +83,7 @@ async function request<T = unknown>(
   url: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { params, headers, ...restOptions } = options;
+  const { params, headers, skipAuthRedirect, ...restOptions } = options;
 
   // 构建完整 URL
   const fullUrl = buildUrl(url, params);
@@ -78,7 +98,15 @@ async function request<T = unknown>(
     const response = await fetch(fullUrl, {
       ...restOptions,
       headers: defaultHeaders,
+      // 跨域携带会话 Cookie（后端 CORS 已开 allowCredentials）
+      credentials: "include",
     });
+
+    // 后端认证拦截器返回 HTTP 401：会话不存在或已过期，跳转登录页
+    if (response.status === 401 && !skipAuthRedirect) {
+      redirectToLogin();
+      throw new Error("未登录或登录已过期");
+    }
 
     const apiResponse = await handleResponse<T>(response);
     return apiResponse.data;

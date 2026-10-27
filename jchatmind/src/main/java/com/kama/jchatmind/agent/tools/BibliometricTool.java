@@ -69,17 +69,21 @@ public class BibliometricTool implements Tool {
                 .limit(5)
                 .map(s -> "%s(%.1f%%)" .formatted(s.getInstitution(), s.getShare() * 100))
                 .collect(Collectors.joining(", "));
+        String partners = c.getCollaborationPartnerCounts().entrySet().stream()
+                .limit(5)
+                .map(e -> e.getKey() + "(" + e.getValue() + ")")
+                .collect(Collectors.joining(", "));
         return """
                 [%s] 完全计数 N_F=%d，分数计数 N_W=%.2f
                 高被引 HC=%.2f（HCR=%.1f%%，前10%%分数分配）
-                国际合作率 ICR=%.1f%%（%d 篇国际合作）
+                国际合作率 ICR=%.1f%%（%d 篇国际合作；伙伴Top5：%s）
                 年度序列：%s；三年移动平均：%s；CAGR=%s
-                机构Top5：%s；HHI=%.4f（有效机构数 %.2f）""".formatted(
+                机构Top5：%s；HHI=%.4f（有效机构数 %.2f；地址解析覆盖率 %.1f%%）""".formatted(
                 c.getCountry(), c.getFullCount(), c.getFractionalCount(),
                 c.getHighCitedCount(), c.getHighCitedRatio(),
-                c.getInternationalRatio(), c.getInternationalCount(),
+                c.getInternationalRatio(), c.getInternationalCount(), partners,
                 years, ma,
                 c.getCagr() == null ? "N/A" : String.format("%.1f%%", c.getCagr()),
-                institutions, c.getInstitutionHhi(), c.getEffectiveInstitutions());
+                institutions, c.getInstitutionHhi(), c.getEffectiveInstitutions(), c.getAddressCoverageRatio());
     }
 }

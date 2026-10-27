@@ -1,4 +1,4 @@
-import { get, post, patch, del, BASE_URL } from "./http.ts";
+import { get, post, patch, del, BASE_URL, redirectToLogin } from "./http.ts";
 import type { ChatMessageVO, MessageType } from "../types";
 
 // 类型定义
@@ -9,6 +9,30 @@ export interface ChatOptions {
 }
 
 export type ModelType = "deepseek-chat" | "glm-4.6";
+
+// ==================== 认证 ====================
+
+export interface LoginResponse {
+  username: string;
+}
+
+/** 登录（失败由 http 层统一弹出 message 提示） */
+export function login(
+  username: string,
+  password: string,
+): Promise<LoginResponse> {
+  return post<LoginResponse>("/auth/login", { username, password });
+}
+
+/** 登出并销毁会话 */
+export function logout(): Promise<void> {
+  return post<void>("/auth/logout");
+}
+
+/** 查询当前登录态；401 不触发自动跳转，由调用方决定后续行为 */
+export function me(): Promise<LoginResponse> {
+  return get<LoginResponse>("/auth/me", undefined, { skipAuthRedirect: true });
+}
 
 export interface CreateAgentRequest {
   name: string;
@@ -332,7 +356,13 @@ export async function uploadDocument(
   const response = await fetch(`${BASE_URL}/documents/upload`, {
     method: "POST",
     body: formData,
+    credentials: "include",
   });
+
+  if (response.status === 401) {
+    redirectToLogin();
+    throw new Error("未登录或登录已过期");
+  }
 
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);

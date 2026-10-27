@@ -66,6 +66,21 @@ public class BibliometricCalculatorTest {
     }
 
     @Test
+    public void yearSeriesShouldIncludeZeroYearsInsideRequestedWindow() {
+        List<PaperBiblioRecord> papers = List.of(
+                paper("Y1", 2020, 1, "CN", "Univ A, Beijing, China"),
+                paper("Y2", 2022, 1, "CN", "Univ A, Beijing, China"));
+
+        BibliometricResult.CountryStats cn =
+                BibliometricCalculator.calculate(papers, 2020, 2022).getByCountry().get("CN");
+
+        assertEquals(1L, cn.getYearSeries().get(2020));
+        assertEquals(0L, cn.getYearSeries().get(2021));
+        assertEquals(1L, cn.getYearSeries().get(2022));
+        assertEquals(0.6667, cn.getMovingAverage3().get(2022), 0.0001);
+    }
+
+    @Test
     public void cagrShouldBeNullWhenSingleYear() {
         BibliometricResult.CountryStats us =
                 BibliometricCalculator.calculate(baseSet(), 2021, 2021).getByCountry().get("US");
@@ -127,6 +142,68 @@ public class BibliometricCalculatorTest {
         assertEquals("CN", BibliometricCalculator.parseCountry("北京邮电大学信息与通信工程学院"));
         assertEquals("US", BibliometricCalculator.parseCountry("Missouri University of Science and Technology, USA"));
         assertEquals("CN", BibliometricCalculator.parseCountry("Inst A, Wuhan, China"));
-        assertNull(BibliometricCalculator.parseCountry("ETH Zurich, Switzerland"));
+        assertEquals("CH", BibliometricCalculator.parseCountry("ETH Zurich, Switzerland"));
+    }
+
+    @Test
+    public void internationalCooperationShouldIncludeNonCnUsPartners() {
+        List<PaperBiblioRecord> papers = List.of(
+                paper("I1", 2020, 1, "CN",
+                        "Univ A, Beijing, China",
+                        "Carleton Univ, Ottawa, Canada"));
+
+        BibliometricResult.CountryStats cn =
+                BibliometricCalculator.calculate(papers, 2020, 2020).getByCountry().get("CN");
+
+        assertEquals(1, cn.getInternationalCount());
+        assertEquals(1L, cn.getCollaborationPartnerCounts().get("CA"));
+    }
+
+    @Test
+    public void addressCoverageShouldSeparateParsedAddressesFromFallbackCountry() {
+        List<PaperBiblioRecord> papers = List.of(
+                paper("A1", 2020, 1, "CN", "Univ A, Beijing, China"),
+                paper("A2", 2020, 1, "CN"));
+
+        BibliometricResult.CountryStats cn =
+                BibliometricCalculator.calculate(papers, 2020, 2020).getByCountry().get("CN");
+
+        assertEquals(2.0, cn.getFractionalCount(), 0.0001,
+                "筛选国别兜底论文不应因地址缺失而从分数计数中消失");
+        assertEquals(1, cn.getAddressParsedPaperCount());
+        assertEquals(50.0, cn.getAddressCoverageRatio(), 0.0001);
+    }
+
+    @Test
+    public void splitWosAddressFragmentsShouldBeRejoinedBeforeInstitutionCounting() {
+        List<PaperBiblioRecord> papers = List.of(
+                paper("F1", 2020, 1, "CN",
+                        "Chinese Acad Sci, Shanghai Inst Opt & Fine Mech, Key Lab Space Laser",
+                        "Commun & Testing Technol, Shanghai 201800, Peoples R China"),
+                paper("F2", 2020, 1, "CN",
+                        "Beijing Univ Posts & Telecommun, Sch Informat & Commun Engn, Beijing",
+                        "100876, Peoples R China"));
+
+        BibliometricResult.CountryStats cn =
+                BibliometricCalculator.calculate(papers, 2020, 2020).getByCountry().get("CN");
+
+        assertEquals(2, cn.getInstitutionShares().size());
+        assertEquals("Chinese Acad Sci", cn.getInstitutionShares().get(0).getInstitution());
+        assertEquals("Beijing Univ Posts & Telecommun", cn.getInstitutionShares().get(1).getInstitution());
+        assertEquals(100.0, cn.getAddressCoverageRatio(), 0.0001);
+    }
+
+    @Test
+    public void addressNormalizationMustNotDropCountryParticipationFromRawFragments() {
+        List<PaperBiblioRecord> papers = List.of(
+                paper("R1", 2020, 1, "US",
+                        "MIT, Cambridge, United States",
+                        "100876, Peoples R China"));
+
+        BibliometricResult result = BibliometricCalculator.calculate(papers, 2020, 2020);
+
+        assertEquals(1, result.getByCountry().get("US").getFullCount());
+        assertEquals(1, result.getByCountry().get("CN").getFullCount(),
+                "原始地址片段中的参与国不能因机构地址合并而丢失");
     }
 }

@@ -1,5 +1,38 @@
 @import "tailwindcss";
 
+/* ============================================================
+   JChatMind · 航天科技情报智能体
+   设计方向：「飞控台 × 情报简报」
+   左侧深空飞控台（dark console）+ 右侧简报纸面（light brief）
+   ============================================================ */
+
+@theme {
+  /* 深空 —— 飞控台 */
+  --color-void: #070d1b;
+  --color-cosmos: #0e1a30;
+  --color-cosmos-2: #152440;
+  --color-orbit: #24375a;
+  /* 纸面 —— 简报区 */
+  --color-paper: #f3f6fa;
+  --color-ink: #172233;
+  --color-ink-2: #5c6b80;
+  --color-line: #e2e9f2;
+  /* 仪表色 */
+  --color-signal: #e8590c; /* 火箭尾焰橙：主行动 */
+  --color-signal-deep: #c24a06;
+  --color-flare: #ffb25c; /* 遥测琥珀：深色面点缀 */
+  --color-telemetry: #3fa9bc; /* 信号青：数据/档案 */
+  /* AddAgentModal 中既有的 brand-* 工具类 */
+  --color-brand-primary: #e8590c;
+  --color-brand-border: #f3c3a6;
+  --color-brand-surface-muted: #fdf0e8;
+
+  --font-display: "Space Grotesk", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-tele: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
+}
+
 html,
 body,
 #root {
@@ -8,10 +41,12 @@ body,
 
 body {
   margin: 0;
-  background: #f4f7fb;
-  color: #172033;
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: "Space Grotesk", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans SC", sans-serif;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 * {
@@ -19,203 +54,463 @@ body {
 }
 
 ::selection {
-  background: rgba(37, 99, 235, 0.18);
+  background: rgba(232, 89, 12, 0.16);
 }
 
+:focus-visible {
+  outline: 2px solid rgba(232, 89, 12, 0.55);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- 遥测微标签（双语仪表刻字） ---------- */
+.tele {
+  font-family: var(--font-tele);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+/* ---------- 全局纸面：带极淡星点网格 ---------- */
 .workbench-shell {
   background:
-    linear-gradient(135deg, rgba(37, 99, 235, 0.06), transparent 32%),
-    linear-gradient(315deg, rgba(5, 150, 105, 0.06), transparent 28%),
-    #f4f7fb;
+    radial-gradient(circle at 1px 1px, rgba(23, 34, 51, 0.055) 1px, transparent 0)
+      0 0 / 26px 26px,
+    linear-gradient(180deg, #f5f8fc 0%, #eef2f8 100%);
 }
 
 .panel-surface {
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(216, 224, 236, 0.86);
-  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
+  background: #ffffff;
+  border: 1px solid var(--color-line);
+  box-shadow: 0 1px 2px rgba(23, 34, 51, 0.04);
 }
 
+/* ============================================================
+   飞控台（深色侧边栏）
+   ============================================================ */
+.console {
+  position: relative;
+  color: #dbe4f2;
+  background:
+    radial-gradient(130% 55% at 0% 0%, rgba(63, 169, 188, 0.12), transparent 58%),
+    radial-gradient(150% 45% at 100% 100%, rgba(232, 89, 12, 0.12), transparent 55%),
+    linear-gradient(178deg, #101d35 0%, #0a1322 52%, #070d1b 100%);
+}
+/* 星点纹理 */
+.console::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(190, 210, 240, 0.14) 1px, transparent 0)
+      0 0 / 34px 34px;
+  mask-image: linear-gradient(180deg, black, transparent 55%);
+  -webkit-mask-image: linear-gradient(180deg, black, transparent 55%);
+}
+
+.console-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(120, 150, 200, 0.28), transparent);
+}
+
+.console-list {
+  background: rgba(255, 255, 255, 0.028);
+  border: 1px solid rgba(110, 140, 190, 0.16);
+  border-radius: 10px;
+}
+
+.console-row {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+.console-row:hover {
+  background: rgba(148, 180, 230, 0.07);
+  border-color: rgba(120, 150, 200, 0.22);
+  transform: translateX(2px);
+}
+.console-row.is-active {
+  background: rgba(232, 89, 12, 0.12);
+  border-color: rgba(232, 89, 12, 0.38);
+}
+.console-row.is-active:hover {
+  transform: none;
+}
+
+.icon-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 150, 200, 0.22);
+  background: rgba(148, 180, 230, 0.07);
+  flex-shrink: 0;
+}
+
+/* 飞控台内的 antd Tabs */
+.console .ant-tabs-nav {
+  margin-bottom: 12px !important;
+}
+.console .ant-tabs-nav::before {
+  border-bottom: 1px solid rgba(110, 140, 190, 0.18) !important;
+}
+.console .ant-tabs-tab {
+  padding: 8px 2px !important;
+}
+.console .ant-tabs-tab + .ant-tabs-tab {
+  margin-left: 18px !important;
+}
+.console .ant-tabs-tab-btn {
+  color: #8296b6;
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+.console .ant-tabs-tab:hover .ant-tabs-tab-btn {
+  color: #cdd9ec;
+}
+.console .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #ffffff !important;
+}
+.console .ant-tabs-ink-bar {
+  background: var(--color-signal) !important;
+  height: 2px !important;
+}
+
+/* 飞控台内按钮 */
+.console .ant-btn-color-geekblue.ant-btn-variant-filled,
+.console .ant-btn-primary {
+  background: var(--color-signal);
+  color: #fff;
+}
+.console .ant-btn-color-geekblue.ant-btn-variant-filled:hover,
+.console .ant-btn-primary:not(:disabled):hover {
+  background: #f26a1d !important;
+}
+
+/* ============================================================
+   简报区（浅色内容）
+   ============================================================ */
+
+/* 列表行（浅色面板内使用） */
 .list-item-surface {
   border: 1px solid transparent;
   background: rgba(255, 255, 255, 0.86);
 }
-
 .list-item-surface:hover {
-  border-color: #c9d6ea;
+  border-color: #d5e0ee;
   background: #ffffff;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 8px 20px rgba(23, 34, 51, 0.06);
   transform: translateY(-1px);
 }
 
-.workspace-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+/* 消息入场 */
+@keyframes msg-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.msg-enter {
+  animation: msg-rise 0.32s ease-out both;
 }
 
+/* 轨道徽标缓转 */
+@keyframes orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.orbit-spin {
+  transform-origin: 24px 24px;
+  animation: orbit-spin 26s linear infinite;
+}
+
+/* 状态呼吸点 */
+@keyframes tele-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.tele-blink {
+  animation: tele-blink 1.6s ease-in-out infinite;
+}
+
+/* 智能体状态：遥测扫描条 */
+@keyframes tele-scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(220%);
+  }
+}
+.status-strip {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(120, 150, 200, 0.28);
+  background: linear-gradient(180deg, #101d35, #0c1526);
+  border-radius: 10px;
+  color: #dbe4f2;
+}
+.status-strip::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 45%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 178, 92, 0.1),
+    transparent
+  );
+  animation: tele-scan 1.8s ease-in-out infinite;
+}
+
+/* 工具调用：终端 chip */
+.term-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-tele);
+  font-size: 11px;
+  border-radius: 6px;
+  padding: 3px 10px;
+  border: 1px solid rgba(120, 150, 200, 0.3);
+  background: linear-gradient(180deg, #101d35, #0c1526);
+  color: #ffd9ae;
+  letter-spacing: 0.02em;
+}
+.term-chip .term-name {
+  color: var(--color-flare);
+  font-weight: 600;
+}
+.term-pre {
+  font-family: var(--font-tele);
+  font-size: 11.5px;
+  line-height: 1.6;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 150, 200, 0.3);
+  background: #0c1526;
+  color: #b8c8e2;
+  padding: 12px 14px;
+  overflow: auto;
+  max-height: 260px;
+}
+
+/* 工具响应 chip（浅色） */
+.resp-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid #d8e7ee;
+  background: #f3fafc;
+  padding: 7px 12px;
+  color: #33566b;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.resp-chip:hover {
+  border-color: #a8ceda;
+  background: #ecf7fa;
+}
+
+/* ---------- 滚动条 ---------- */
+.workspace-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #c3cedd transparent;
+}
 .workspace-scrollbar::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-
 .workspace-scrollbar::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #c3cedd;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+.workspace-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #9fb0c6;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* 飞控台内滚动条 */
+.console .workspace-scrollbar {
+  scrollbar-color: rgba(120, 150, 200, 0.35) transparent;
+}
+.console .workspace-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(120, 150, 200, 0.35);
   border: 3px solid transparent;
   border-radius: 999px;
   background-clip: content-box;
 }
 
-.workspace-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-  border: 3px solid transparent;
-  background-clip: content-box;
+/* 隐藏滚动条但保持滚动功能 */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
-/* 修复 Ant Design Tabs 在 flex 布局中的滚动问题 */
+/* ============================================================
+   antd 覆写（简报区为浅色仪表风）
+   ============================================================ */
+
+/* Tabs 在 flex 布局中的滚动修复 */
 .ant-tabs {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
-
 .ant-tabs-content-holder {
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
-
 .ant-tabs-content {
   height: 100%;
 }
-
 .ant-tabs-tabpane {
   height: 100%;
   overflow: hidden;
 }
 
-.ant-tabs-nav {
-  margin-bottom: 14px !important;
-}
-
-.ant-tabs-tab {
-  padding: 10px 0 !important;
-}
-
-.ant-tabs-tab-btn {
-  color: #64748b;
-  font-weight: 500;
-}
-
-.ant-tabs-tab-active .ant-tabs-tab-btn {
-  color: #1d4ed8 !important;
-}
-
 .ant-divider {
-  margin: 14px 0 !important;
-  border-color: #e8edf5 !important;
+  margin: 12px 0 !important;
+  border-color: var(--color-line) !important;
 }
 
 .ant-btn {
   box-shadow: none;
 }
-
 .ant-btn-color-geekblue.ant-btn-variant-filled,
 .ant-btn-primary {
-  background: #2563eb;
+  background: var(--color-signal);
   color: #ffffff;
 }
-
 .ant-btn-color-geekblue.ant-btn-variant-filled:hover,
 .ant-btn-primary:not(:disabled):hover {
-  background: #1d4ed8 !important;
+  background: #f26a1d !important;
 }
 
 .ant-card {
-  border-color: #e8edf5;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+  border-color: var(--color-line);
+  box-shadow: 0 1px 2px rgba(23, 34, 51, 0.04);
 }
-
 .ant-card-head {
-  border-bottom-color: #e8edf5 !important;
+  border-bottom-color: var(--color-line) !important;
+  min-height: 46px !important;
+}
+.ant-card-head-title {
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .ant-table-wrapper .ant-table {
-  color: #172033;
+  color: var(--color-ink);
 }
-
 .ant-table-wrapper .ant-table-thead > tr > th {
-  background: #f8fafc !important;
-  color: #475569;
+  background: #f6f9fc !important;
+  color: var(--color-ink-2);
   font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  border-bottom-color: var(--color-line) !important;
 }
-
 .ant-table-wrapper .ant-table-tbody > tr > td {
-  border-bottom-color: #eef2f7;
+  border-bottom-color: #eef2f8;
+}
+.ant-table-wrapper .ant-table-tbody > tr:hover > td {
+  background: #fdf6f0 !important;
 }
 
-.ant-table-wrapper .ant-table-tbody > tr:hover > td {
-  background: #f8fbff !important;
+/* 对话气泡 */
+.ant-bubble-body {
+  min-width: 0;
 }
 
 .ant-bubble-content {
   border-radius: 12px !important;
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
 }
-
 .ant-bubble-start .ant-bubble-content {
-  border: 1px solid #e8edf5;
+  border: 1px solid var(--color-line);
   background: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(23, 34, 51, 0.05);
 }
-
 .ant-bubble-end .ant-bubble-content {
-  background: #2563eb !important;
-  color: #ffffff !important;
+  background: linear-gradient(180deg, #14233e, #0e1a30) !important;
+  color: #f2f6fc !important;
+  border: 1px solid rgba(120, 150, 200, 0.25);
 }
-
 .ant-bubble-end .ant-bubble-content * {
   color: inherit;
 }
 
+/* 输入发送器 */
 .ant-sender {
-  border-color: #d8e0ec !important;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  border-color: #d9e2ee !important;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(23, 34, 51, 0.04);
 }
-
 .ant-sender:focus-within {
-  border-color: #2563eb !important;
+  border-color: var(--color-signal) !important;
   box-shadow:
-    0 0 0 3px rgba(37, 99, 235, 0.14),
-    0 12px 28px rgba(15, 23, 42, 0.08) !important;
+    0 0 0 3px rgba(232, 89, 12, 0.14),
+    0 1px 2px rgba(23, 34, 51, 0.04) !important;
+}
+.ant-sender .ant-sender-submit-btn {
+  background: var(--color-signal) !important;
 }
 
+/* 模态框 */
 .ant-modal-content {
-  border: 1px solid #e8edf5;
-  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18) !important;
+  border: 1px solid var(--color-line);
+  box-shadow: 0 24px 64px rgba(7, 13, 27, 0.22) !important;
 }
-
 .ant-modal-header {
-  border-bottom: 1px solid #e8edf5;
+  border-bottom: 1px solid var(--color-line);
   margin-bottom: 16px !important;
   padding-bottom: 12px;
 }
 
+/* 表单控件 */
 .ant-input,
 .ant-input-number,
 .ant-select-selector {
-  border-color: #d8e0ec !important;
+  border-color: #d9e2ee !important;
 }
-
 .ant-input:hover,
 .ant-input-number:hover,
 .ant-select-selector:hover {
-  border-color: #9eb6dc !important;
+  border-color: #b6c6da !important;
 }
 
-/* 隐藏滚动条但保持滚动功能 */
-.scrollbar-hide {
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
-}
-
-.scrollbar-hide::-webkit-scrollbar {
-  display: none; /* Chrome, Safari and Opera */
+/* ---------- 无障碍：减少动态 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

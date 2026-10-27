@@ -41,6 +41,7 @@ public class ApiResponse<T> {
     @AllArgsConstructor
     public enum ApiCode {
         SUCCESS(200, "success"),
+        UNAUTHORIZED(401, "unauthorized"),
         ERROR(500, "error");
 
         private final int code;

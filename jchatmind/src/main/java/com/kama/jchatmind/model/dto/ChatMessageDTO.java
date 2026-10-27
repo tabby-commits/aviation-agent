@@ -39,6 +39,7 @@ public class ChatMessageDTO {
         private List<AssistantMessage.ToolCall> toolCalls;
         private List<ChartArtifact> chartArtifacts;
         private ContextManagement contextManagement;
+        private String reportId;
     }
 
     @Data

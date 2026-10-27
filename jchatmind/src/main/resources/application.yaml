@@ -33,13 +33,23 @@
       base-url: https://api.deepseek.com
       chat:
         options:
-          model: deepseek-v4-flash
+          model: deepseek-flash
     zhipuai:
       api-key: ${ZHIPUAI_API_KEY:}
       base-url: https://open.bigmodel.cn/api/paas
       chat:
         options:
-          model: glm-4.6
+          model: GLM-5.3
+server:
+  servlet:
+    session:
+      # 登录态：7 天滑动过期（每次访问自动续期），Cookie 同站严格模式防 CSRF
+      timeout: 7d
+      cookie:
+        name: JCHATMIND_SESSION
+        max-age: 7d
+        http-only: true
+        same-site: strict
 mybatis:
   type-aliases-package: com.kama.jchatmind.model.entity
   mapper-locations: classpath:mapper/*.xml
@@ -50,6 +60,13 @@ document:
     base-path: ./data/documents
 
 jchatmind:
+  # ---- 嵌入服务：zhipu（智谱 embedding-3 API）或 ollama（本机 bge-m3）----
+  embedding:
+    provider: zhipu                                # zhipu | ollama
+    base-url: https://open.bigmodel.cn/api/paas/v4 # ollama 时改为 http://localhost:11434
+    api-key: ${spring.ai.zhipuai.api-key:}         # 复用智谱 Key（application-local.yaml / 环境变量）
+    model: embedding-3                             # ollama 时改为 bge-m3
+    dimensions: 1024                               # 必须与 chunk_bge_m3 表向量维度一致
   context-management:
     enabled: true
     tool-result-max-chars: 8000
@@ -105,3 +122,8 @@ jchatmind:
       default-count: 8
       timeout-ms: 8000
       max-retries: 2
+  # ---- 报告流水线（REPORT_STEP 过程事件、任务并行、新闻 KB 线索）----
+  report:
+    model: deepseek          # 报告角色使用的模型
+    parallelism: 3           # actor-status 任务并行度
+    news-kb-id: ""           # 新闻知识库 ID；留空禁用 KB 线索通道

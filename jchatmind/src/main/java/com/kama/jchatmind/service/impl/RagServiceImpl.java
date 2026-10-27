@@ -13,18 +13,22 @@ import com.kama.jchatmind.service.rag.bm25.InvertedIndex;
 import com.kama.jchatmind.service.rag.bm25.RRFFusion;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -34,18 +38,31 @@ public class RagServiceImpl implements RagService, StructuredRetrievalService {
     private final ChunkBgeM3Mapper chunkBgeM3Mapper;
     private final BM25IndexManager bm25IndexManager;
     private final RagHybridProperties hybridProperties;
+    private final String provider;
+    private final String apiKey;
+    private final String model;
+    private final int dimensions;
 
     public RagServiceImpl(WebClient.Builder builder,
                           ChunkBgeM3Mapper chunkBgeM3Mapper,
                           BM25IndexManager bm25IndexManager,
-                          RagHybridProperties hybridProperties) {
-        // 嵌入响应较大（32块×1024维float≈650KB），需提高默认 256KB 缓冲上限
-        this.webClient = builder.baseUrl("http://localhost:11434")
+                          RagHybridProperties hybridProperties,
+                          @Value("${jchatmind.embedding.provider:ollama}") String provider,
+                          @Value("${jchatmind.embedding.base-url:http://localhost:11434}") String baseUrl,
+                          @Value("${jchatmind.embedding.api-key:}") String apiKey,
+                          @Value("${jchatmind.embedding.model:bge-m3}") String model,
+                          @Value("${jchatmind.embedding.dimensions:1024}") int dimensions) {
+        // 嵌入响应较大（批量×1024维float），需提高默认 256KB 缓冲上限
+        this.webClient = builder.baseUrl(baseUrl)
                 .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))
                 .build();
         this.chunkBgeM3Mapper = chunkBgeM3Mapper;
         this.bm25IndexManager = bm25IndexManager;
         this.hybridProperties = hybridProperties;
+        this.provider = provider;
+        this.apiKey = apiKey;
+        this.model = model;
+        this.dimensions = dimensions;
     }
 
     @Data
@@ -57,6 +74,19 @@ public class RagServiceImpl implements RagService, StructuredRetrievalService {
     private static class BatchEmbeddingResponse {
         private String model;
         private List<float[]> embeddings;
+    }
+
+    /** 智谱 embedding-3 响应（OpenAI 兼容格式） */
+    @Data
+    private static class ZhipuEmbeddingResponse {
+        private String model;
+        private List<Item> data;
+
+        @Data
+        private static class Item {
+            private int index;
+            private float[] embedding;
+        }
     }
 
     private float[] doEmbed(String text) {
@@ -75,16 +105,51 @@ public class RagServiceImpl implements RagService, StructuredRetrievalService {
         if (texts == null || texts.isEmpty()) {
             return Collections.emptyList();
         }
+        return "zhipu".equalsIgnoreCase(provider) ? embedViaZhipu(texts) : embedViaOllama(texts);
+    }
+
+    private List<float[]> embedViaZhipu(List<String> texts) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        body.put("input", texts);
+        // dimensions 必须与 chunk_bge_m3 表的向量维度一致（bge-m3 为 1024）
+        if (dimensions > 0) {
+            body.put("dimensions", dimensions);
+        }
+        ZhipuEmbeddingResponse resp = webClient.post()
+                .uri("/embeddings")
+                .headers(headers -> {
+                    if (apiKey != null && !apiKey.isBlank()) {
+                        headers.setBearerAuth(apiKey);
+                    }
+                })
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(ZhipuEmbeddingResponse.class)
+                .timeout(Duration.ofSeconds(60))
+                .block();
+        Assert.notNull(resp, "Zhipu embedding response cannot be null");
+        if (resp.getData() == null) {
+            return Collections.emptyList();
+        }
+        // 响应按 index 还原输入顺序
+        return resp.getData().stream()
+                .sorted(Comparator.comparingInt(ZhipuEmbeddingResponse.Item::getIndex))
+                .map(ZhipuEmbeddingResponse.Item::getEmbedding)
+                .collect(Collectors.toList());
+    }
+
+    private List<float[]> embedViaOllama(List<String> texts) {
         BatchEmbeddingResponse resp = webClient.post()
                 .uri("/api/embed")
                 .bodyValue(Map.of(
-                        "model", "bge-m3",
+                        "model", model,
                         "input", texts
                 ))
                 .retrieve()
                 .bodyToMono(BatchEmbeddingResponse.class)
                 // 批量嵌入（32块）CPU 上约 15-30s；5 分钟无响应视为 Ollama 异常，快速失败而非无限挂起
-                .timeout(java.time.Duration.ofMinutes(5))
+                .timeout(Duration.ofMinutes(5))
                 .block();
         Assert.notNull(resp, "Batch embedding response cannot be null");
         return resp.getEmbeddings() != null ? resp.getEmbeddings() : Collections.emptyList();

@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * 文献计量纯函数计算器（中期报告 3.2.3 节公式，无副作用、无 IO）
@@ -28,6 +29,52 @@ public final class BibliometricCalculator {
             "北京", "上海", "南京", "武汉", "长沙", "哈尔滨", "成都", "西安", "合肥", "杭州", "广州", "深圳");
     private static final Set<String> US_KEYWORDS = Set.of("united states", "usa", "u.s.a", "u. s. a");
 
+    /** WoS C1 首段中可视为机构主体的标记；缺少主体的段通常是被分号误拆的地址续段。 */
+    private static final Pattern INSTITUTION_MARKER = Pattern.compile(
+            "(?i).*(\\buniv(?:ersity)?\\b|\\bcollege\\b|\\bacad(?:emy)?\\b|\\binst(?:itute)?\\b|"
+                    + "\\blab(?:oratory)?\\b|\\bcentre\\b|\\bcenter\\b|\\bcorp(?:oration)?\\b|"
+                    + "\\bltd\\b|\\binc\\b|\\bcompany\\b|\\bnasa\\b|\\bcaltech\\b|\\bmit\\b|"
+                    + "\\bhuawei\\b|\\bspacex\\b|大学|学院|研究院|实验室|公司|中心).*");
+
+    /** 仅用于识别国际合作伙伴；结果主体仍只输出 CN/US。 */
+    private static final Map<String, Set<String>> PARTNER_KEYWORDS = Map.ofEntries(
+            Map.entry("CA", Set.of("canada")),
+            Map.entry("KR", Set.of("south korea", "republic of korea")),
+            Map.entry("JP", Set.of("japan")),
+            Map.entry("GB", Set.of("united kingdom", "england", "scotland", "wales")),
+            Map.entry("DE", Set.of("germany")),
+            Map.entry("FR", Set.of("france")),
+            Map.entry("IT", Set.of("italy")),
+            Map.entry("ES", Set.of("spain")),
+            Map.entry("AU", Set.of("australia")),
+            Map.entry("NZ", Set.of("new zealand")),
+            Map.entry("SG", Set.of("singapore")),
+            Map.entry("IN", Set.of("india")),
+            Map.entry("CH", Set.of("switzerland")),
+            Map.entry("NL", Set.of("netherlands")),
+            Map.entry("SE", Set.of("sweden")),
+            Map.entry("FI", Set.of("finland")),
+            Map.entry("NO", Set.of("norway")),
+            Map.entry("DK", Set.of("denmark")),
+            Map.entry("BE", Set.of("belgium")),
+            Map.entry("AT", Set.of("austria")),
+            Map.entry("PL", Set.of("poland")),
+            Map.entry("PT", Set.of("portugal")),
+            Map.entry("GR", Set.of("greece")),
+            Map.entry("IE", Set.of("ireland")),
+            Map.entry("IL", Set.of("israel")),
+            Map.entry("RU", Set.of("russia", "russian federation")),
+            Map.entry("UA", Set.of("ukraine")),
+            Map.entry("BR", Set.of("brazil")),
+            Map.entry("MX", Set.of("mexico")),
+            Map.entry("ZA", Set.of("south africa")),
+            Map.entry("AE", Set.of("united arab emirates", "uae")),
+            Map.entry("SA", Set.of("saudi arabia")),
+            Map.entry("TR", Set.of("turkey", "türkiye")),
+            Map.entry("TW", Set.of("taiwan")),
+            Map.entry("HK", Set.of("hong kong"))
+    );
+
     private BibliometricCalculator() {
     }
 
@@ -46,6 +93,13 @@ public final class BibliometricCalculator {
                 return "CN";
             }
         }
+        for (Map.Entry<String, Set<String>> entry : PARTNER_KEYWORDS.entrySet()) {
+            for (String keyword : entry.getValue()) {
+                if (lower.contains(keyword)) {
+                    return entry.getKey();
+                }
+            }
+        }
         return null;
     }
 
@@ -56,6 +110,33 @@ public final class BibliometricCalculator {
         }
         String first = affiliation.split(",")[0].trim();
         return first.isEmpty() ? affiliation.trim() : first;
+    }
+
+    /**
+     * WoS C1 中少量机构地址会在机构名内部被分号切开，例如
+     * "Chinese Acad Sci, ... Space Laser; Commun & Testing Technol, ..., Peoples R China"。
+     * 导入后后半段会被误认成独立机构。这里将没有机构主体标记的续段并回上一地址。
+     */
+    public static List<String> normalizeAffiliations(List<String> affiliations) {
+        if (affiliations == null || affiliations.isEmpty()) {
+            return List.of();
+        }
+        List<String> normalized = new ArrayList<>();
+        for (String affiliation : affiliations) {
+            if (affiliation == null || affiliation.isBlank()) {
+                continue;
+            }
+            String value = affiliation.trim();
+            String first = institutionName(value);
+            boolean startsInstitution = INSTITUTION_MARKER.matcher(first).matches();
+            if (!startsInstitution && !normalized.isEmpty()) {
+                int last = normalized.size() - 1;
+                normalized.set(last, normalized.get(last) + ", " + value);
+            } else {
+                normalized.add(value);
+            }
+        }
+        return normalized;
     }
 
     public static BibliometricResult calculate(List<PaperBiblioRecord> papers, int yearFrom, int yearTo) {
@@ -69,13 +150,18 @@ public final class BibliometricCalculator {
         for (PaperBiblioRecord p : scoped) {
             Set<String> countries = new java.util.LinkedHashSet<>();
             List<InstitutionCountry> institutions = new ArrayList<>();
-            List<String> affs = p.affiliations() == null ? List.of() : p.affiliations();
-            for (String aff : affs) {
-                String country = parseCountry(aff);
-                institutions.add(new InstitutionCountry(institutionName(aff), country));
+            List<String> rawAffiliations = p.affiliations() == null ? List.of() : p.affiliations();
+            // 参与国以原始地址逐段识别，避免机构地址续段合并后把第二个国家吞掉。
+            for (String affiliation : rawAffiliations) {
+                String country = parseCountry(affiliation);
                 if (country != null) {
                     countries.add(country);
                 }
+            }
+            List<String> affs = normalizeAffiliations(rawAffiliations);
+            for (String aff : affs) {
+                String country = parseCountry(aff);
+                institutions.add(new InstitutionCountry(institutionName(aff), country));
             }
             if (countries.isEmpty() && p.firstAuthorCountry() != null) {
                 countries.add(p.firstAuthorCountry()); // 地址无法解析时兜底
@@ -87,13 +173,18 @@ public final class BibliometricCalculator {
         // 高被引 h_i（按年份参照组，含并列分数分配）
         Map<String, Double> hByDoc = computeHighCitedWeights(scoped);
 
-        // 收集全部参与国
-        Set<String> allCountries = new java.util.TreeSet<>();
-        countriesByDoc.values().forEach(allCountries::addAll);
+        // 分析主体固定为 CN/US；其他国家只用于国际合作及伙伴统计。
+        Set<String> allCountries = new java.util.LinkedHashSet<>();
+        for (String focusCountry : List.of("CN", "US")) {
+            if (countriesByDoc.values().stream().anyMatch(countries -> countries.contains(focusCountry))) {
+                allCountries.add(focusCountry);
+            }
+        }
 
         Map<String, BibliometricResult.CountryStats> byCountry = new LinkedHashMap<>();
         for (String country : allCountries) {
-            byCountry.put(country, computeCountry(country, scoped, countriesByDoc, institutionsByDoc, hByDoc));
+            byCountry.put(country, computeCountry(
+                    country, scoped, countriesByDoc, institutionsByDoc, hByDoc, yearFrom, yearTo));
         }
 
         return BibliometricResult.builder()
@@ -111,12 +202,19 @@ public final class BibliometricCalculator {
                                                                   List<PaperBiblioRecord> scoped,
                                                                   Map<String, Set<String>> countriesByDoc,
                                                                   Map<String, List<InstitutionCountry>> institutionsByDoc,
-                                                                  Map<String, Double> hByDoc) {
+                                                                  Map<String, Double> hByDoc,
+                                                                  int yearFrom,
+                                                                  int yearTo) {
         long fullCount = 0;
         double fractionalCount = 0;
         long internationalCount = 0;
+        long addressParsedPaperCount = 0;
         double highCited = 0;
         Map<Integer, Long> yearSeries = new LinkedHashMap<>();
+        for (int year = yearFrom; year <= yearTo; year++) {
+            yearSeries.put(year, 0L);
+        }
+        Map<String, Long> collaborationPartnerCounts = new LinkedHashMap<>();
         Map<String, Double> shareNumeratorByInstitution = new LinkedHashMap<>(); // Σ 1/m_ic
         Map<String, Long> paperCountByInstitution = new LinkedHashMap<>();
 
@@ -131,21 +229,34 @@ public final class BibliometricCalculator {
             List<InstitutionCountry> institutions = institutionsByDoc.get(p.docId());
             int totalInstitutions = institutions.size();
             long countryInstitutions = institutions.stream().filter(i -> country.equals(i.country())).count();
-            if (totalInstitutions > 0) {
-                fractionalCount += (double) countryInstitutions / totalInstitutions;
+            double countryWeight;
+            if (totalInstitutions > 0 && countryInstitutions > 0) {
+                countryWeight = (double) countryInstitutions / totalInstitutions;
+            } else if (countries.size() == 1) {
+                // 地址缺失或无法解析时，沿用经筛选确认的唯一国家归属；
+                // 地址质量仍由 addressCoverageRatio 单独披露。
+                countryWeight = 1.0;
+            } else {
+                countryWeight = 0.0;
             }
+            fractionalCount += countryWeight;
 
             if (countries.size() >= 2) {
                 internationalCount++;
+                for (String partner : countries) {
+                    if (!country.equals(partner)) {
+                        collaborationPartnerCounts.merge(partner, 1L, Long::sum);
+                    }
+                }
             }
 
             Double h = hByDoc.get(p.docId());
             if (h != null) {
-                double weight = totalInstitutions > 0 ? (double) countryInstitutions / totalInstitutions : 1.0;
-                highCited += weight * h;
+                highCited += countryWeight * h;
             }
 
             if (countryInstitutions > 0) {
+                addressParsedPaperCount++;
                 double perInstitution = 1.0 / countryInstitutions;
                 for (InstitutionCountry ic : institutions) {
                     if (country.equals(ic.country())) {
@@ -194,6 +305,14 @@ public final class BibliometricCalculator {
                 .fractionalCount(round(fractionalCount))
                 .internationalCount(internationalCount)
                 .internationalRatio(fullCount > 0 ? round(internationalCount * 100.0 / fullCount) : 0)
+                .collaborationPartnerCounts(collaborationPartnerCounts.entrySet().stream()
+                        .sorted(Map.Entry.<String, Long>comparingByValue().reversed()
+                                .thenComparing(Map.Entry.comparingByKey()))
+                        .collect(java.util.stream.Collectors.toMap(
+                                Map.Entry::getKey,
+                                Map.Entry::getValue,
+                                (left, right) -> left,
+                                LinkedHashMap::new)))
                 .highCitedCount(round(highCited))
                 .highCitedRatio(fractionalCount > 0 ? round(highCited * 100.0 / fractionalCount) : 0)
                 .yearSeries(yearSeries)
@@ -202,6 +321,8 @@ public final class BibliometricCalculator {
                 .institutionShares(shares)
                 .institutionHhi(round(hhi))
                 .effectiveInstitutions(hhi > 0 ? round(1.0 / hhi) : 0)
+                .addressParsedPaperCount(addressParsedPaperCount)
+                .addressCoverageRatio(fullCount > 0 ? round(addressParsedPaperCount * 100.0 / fullCount) : 0)
                 .build();
     }
 

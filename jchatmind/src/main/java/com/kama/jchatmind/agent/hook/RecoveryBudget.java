@@ -7,6 +7,6 @@ public record RecoveryBudget(
 ) {
 
     public static RecoveryBudget defaults() {
-        return new RecoveryBudget(1, 1, 1);
+        return new RecoveryBudget(1, 1, 2);
     }
 }

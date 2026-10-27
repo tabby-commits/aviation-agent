@@ -347,4 +347,59 @@ class SkillTest {
         assertTrue(methods.getInstructions().contains("口径核对"));
         assertTrue(methods.getInstructions().contains("不得" ) || methods.getInstructions().contains("禁止"));
     }
+
+    @Test
+    @DisplayName("竞争力框架 Skill 区分论文参数与工程规模")
+    void testFrameworkSkillSeparatesPaperParametersFromEngineeringScale() {
+        String instructions = registeredSkill("competitiveness-framework").getInstructions();
+
+        assertAll(
+                () -> assertTrue(instructions.contains("28 项")),
+                () -> assertTrue(instructions.contains("指标（23）")),
+                () -> assertTrue(instructions.contains("发射次数")),
+                () -> assertTrue(instructions.contains("在轨卫星数量")),
+                () -> assertTrue(instructions.contains("不属于论文性能参数")),
+                () -> assertTrue(instructions.contains("不计算综合得分")),
+                () -> assertTrue(instructions.contains("未选指标及原因"))
+        );
+    }
+
+    @Test
+    @DisplayName("数据资源 Skill 固定 SpaceNews 样本与快照边界")
+    void testDataResourceSkillRequiresSnapshotAndBoundedNewsEvidence() {
+        String instructions = registeredSkill("data-resource-rules").getInstructions();
+
+        assertAll(
+                () -> assertTrue(instructions.contains("SpaceNews 报道样本")),
+                () -> assertTrue(instructions.contains("snapshot_id")),
+                () -> assertTrue(instructions.contains("测试文档不得进入正式")),
+                () -> assertTrue(instructions.contains("本阶段不调用外部 Web")),
+                () -> assertTrue(instructions.contains("新闻转述，原始来源未核验")),
+                () -> assertTrue(instructions.contains("报道篇数代替事件数"))
+        );
+    }
+
+    @Test
+    @DisplayName("分析方法 Skill 拒绝不可比排名和论文新闻因果")
+    void testAnalysisMethodsSkillEnforcesExperimentBoundaries() {
+        String instructions = registeredSkill("ci-analysis-methods").getInstructions();
+
+        assertAll(
+                () -> assertTrue(instructions.contains("0 组严格可比对")),
+                () -> assertTrue(instructions.contains("论文数")),
+                () -> assertTrue(instructions.contains("参数记录数")),
+                () -> assertTrue(instructions.contains("流量")),
+                () -> assertTrue(instructions.contains("存量")),
+                () -> assertTrue(instructions.contains("不把报道篇数当作发射次数")),
+                () -> assertTrue(instructions.contains("不执行论文与新闻之间")),
+                () -> assertTrue(instructions.contains("事实、计算、推断和缺口"))
+        );
+    }
+
+    private SkillDefinition registeredSkill(String name) {
+        return scanner.scan(Path.of("skills")).stream()
+                .filter(skill -> skill.getName().equals(name))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("未找到 Skill: " + name));
+    }
 }

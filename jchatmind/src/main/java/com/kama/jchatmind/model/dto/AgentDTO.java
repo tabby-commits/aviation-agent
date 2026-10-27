@@ -35,7 +35,7 @@ public class AgentDTO {
     @Getter
     public enum ModelType {
         DEEPSEEK("deepseek", "deepseek-chat"),
-        GLM_4_6("glm-4.6");
+        GLM_5_3("GLM-5.3", "glm-4.6");
 
         @JsonValue
         private final String modelName;

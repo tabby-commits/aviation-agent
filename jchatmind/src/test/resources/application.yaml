@@ -2,9 +2,9 @@ spring:
   application:
     name: jchatmind-test
   datasource:
-    url: jdbc:postgresql://localhost:5432/jchatmind
+    url: ${JCHATMIND_TEST_DB_URL:jdbc:postgresql://localhost:5432/jchatmind_test}
     username: postgres
-    password: 22374493
+    password: ${JCHATMIND_TEST_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
   mail:
     host: smtp.qq.com
@@ -25,13 +25,13 @@ spring:
       base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
       chat:
         options:
-          model: deepseek-v4-flash
+          model: deepseek-flash
     zhipuai:
       api-key: ${ZHIPUAI_API_KEY:sk-test}
       base-url: ${ZHIPUAI_BASE_URL:https://open.bigmodel.cn/api/paas}
       chat:
         options:
-          model: glm-4.6
+          model: GLM-5.3
   servlet:
     multipart:
       max-file-size: 50MB

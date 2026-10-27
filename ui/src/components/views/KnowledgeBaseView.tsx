@@ -12,10 +12,11 @@ import {
   Empty,
 } from "antd";
 import {
-  BookOutlined,
+  DatabaseOutlined,
   UploadOutlined,
   DeleteOutlined,
   FileOutlined,
+  InboxOutlined,
 } from "@ant-design/icons";
 import type { UploadProps } from "antd";
 import { useKnowledgeBases } from "../../hooks/useKnowledgeBases.ts";
@@ -82,7 +83,7 @@ const KnowledgeBaseView: React.FC = () => {
       key: "filename",
       render: (text: string) => (
         <Space>
-          <FileOutlined />
+          <FileOutlined className="text-telemetry" />
           <span>{text}</span>
         </Space>
       ),
@@ -92,13 +93,25 @@ const KnowledgeBaseView: React.FC = () => {
       dataIndex: "filetype",
       key: "filetype",
       width: 120,
+      render: (text: string) => (
+        <span
+          className="tele text-ink-2"
+          style={{ fontSize: 10, letterSpacing: "0.08em" }}
+        >
+          {text}
+        </span>
+      ),
     },
     {
       title: "大小",
       dataIndex: "size",
       key: "size",
       width: 120,
-      render: (size: number) => formatFileSize(size),
+      render: (size: number) => (
+        <span style={{ fontFamily: "var(--font-tele)", fontSize: 12 }}>
+          {formatFileSize(size)}
+        </span>
+      ),
     },
     {
       title: "操作",
@@ -125,7 +138,7 @@ const KnowledgeBaseView: React.FC = () => {
     return (
       <div className="flex flex-col h-full items-center justify-center p-6">
         <Empty
-          image={<BookOutlined className="text-6xl text-slate-300" />}
+          image={<DatabaseOutlined className="text-5xl text-slate-300" />}
           description={
             <div className="mt-4">
               <Title level={4} type="secondary">
@@ -134,6 +147,7 @@ const KnowledgeBaseView: React.FC = () => {
               <Text type="secondary" className="text-sm">
                 请从左侧情报库列表中选择资料来源查看详情
               </Text>
+              <div className="tele text-slate-400 mt-3">Select An Archive</div>
             </div>
           }
         />
@@ -165,56 +179,80 @@ const KnowledgeBaseView: React.FC = () => {
   return (
     <div className="flex flex-col h-full p-6 overflow-y-auto workspace-scrollbar">
       <div className="max-w-6xl w-full mx-auto">
+        {/* 档案头 */}
         <div className="mb-4">
           <Card className="panel-surface">
             <div className="flex items-start gap-4">
-              <div className="w-16 h-16 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 flex items-center justify-center text-3xl shrink-0">
-                <BookOutlined />
+              <div
+                className="w-14 h-14 rounded-lg flex items-center justify-center text-2xl shrink-0"
+                style={{
+                  background: "#f3fafc",
+                  border: "1px solid #d8e7ee",
+                  color: "#3fa9bc",
+                }}
+              >
+                <DatabaseOutlined />
               </div>
-              <div className="flex-1">
-                <Title level={3} className="mb-2 text-slate-900">
-                  {currentKnowledgeBase.name}
-                </Title>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="tele text-telemetry">Archive</span>
+                  <Title level={3} className="mb-0! text-ink">
+                    {currentKnowledgeBase.name}
+                  </Title>
+                </div>
                 {currentKnowledgeBase.description && (
-                  <Paragraph className="text-slate-600 mb-0">
+                  <Paragraph className="text-ink-2 mb-0 mt-1">
                     {currentKnowledgeBase.description}
                   </Paragraph>
                 )}
-                <Text type="secondary" className="text-sm">
-                  情报库 ID: {currentKnowledgeBase.knowledgeBaseId}
-                </Text>
+                <div className="flex items-center gap-4 mt-2 flex-wrap">
+                  <Text type="secondary" className="tele" style={{ fontSize: 10 }}>
+                    ID {currentKnowledgeBase.knowledgeBaseId.slice(0, 8)}
+                  </Text>
+                  <Text type="secondary" className="tele" style={{ fontSize: 10 }}>
+                    DOCS {documents.length}
+                  </Text>
+                </div>
               </div>
             </div>
           </Card>
         </div>
-        {/* 知识库信息卡片 */}
 
+        {/* 上传文档区域 */}
         <div className="mb-4">
-          {/* 上传文档区域 */}
-          <Card title="上传情报材料" className="panel-surface">
-            <Upload
-              customRequest={handleUpload}
-              showUploadList={false}
-              accept=".md"
-              disabled={uploading}
-            >
-              <Button
-                type="primary"
-                icon={<UploadOutlined />}
-                loading={uploading}
-                size="large"
+          <Card className="panel-surface">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <InboxOutlined className="text-xl text-slate-400" />
+                <div>
+                  <div className="text-sm font-medium text-ink">
+                    上传情报材料
+                  </div>
+                  <Text type="secondary" className="text-xs">
+                    支持格式: Markdown · 材料经清洗、切分后进入检索证据池
+                  </Text>
+                </div>
+              </div>
+              <Upload
+                customRequest={handleUpload}
+                showUploadList={false}
+                accept=".md"
+                disabled={uploading}
               >
-                选择材料上传
-              </Button>
-            </Upload>
-            <Text type="secondary" className="block mt-2 text-xs">
-              支持格式: Markdown
-            </Text>
+                <Button
+                  type="primary"
+                  icon={<UploadOutlined />}
+                  loading={uploading}
+                >
+                  选择材料上传
+                </Button>
+              </Upload>
+            </div>
           </Card>
         </div>
 
+        {/* 文档列表 */}
         <div className="mb-4">
-          {/* 文档列表 */}
           <Card
             title={`情报材料列表 (${documents.length})`}
             className="panel-surface"

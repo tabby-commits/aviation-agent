@@ -380,17 +380,22 @@ public class JChatMind {
             return;
         }
         for (ChatMessageDTO message : pendingChatMessages) {
-            ChatMessageVO vo = chatMessageConverter.toVO(message);
-            SseMessage sseMessage = SseMessage.builder()
-                    .type(SseMessage.Type.AI_GENERATED_CONTENT)
-                    .payload(SseMessage.Payload.builder()
-                            .message(vo)
-                            .build())
-                    .metadata(SseMessage.Metadata.builder()
-                            .chatMessageId(message.getId())
-                            .build())
-                    .build();
-            sseService.send(this.chatSessionId, sseMessage);
+            try {
+                ChatMessageVO vo = chatMessageConverter.toVO(message);
+                SseMessage sseMessage = SseMessage.builder()
+                        .type(SseMessage.Type.AI_GENERATED_CONTENT)
+                        .payload(SseMessage.Payload.builder()
+                                .message(vo)
+                                .build())
+                        .metadata(SseMessage.Metadata.builder()
+                                .chatMessageId(message.getId())
+                                .build())
+                        .build();
+                sseService.send(this.chatSessionId, sseMessage);
+            } catch (Exception e) {
+                // SSE is best-effort; API/batch clients may intentionally have no browser connection.
+                log.debug("Skip SSE delivery for session {}: {}", this.chatSessionId, e.getMessage());
+            }
         }
         pendingChatMessages.clear();
     }
@@ -646,54 +651,94 @@ public class JChatMind {
         if (!StringUtils.hasText(text)) {
             return true;
         }
-        return text.trim().length() < MIN_MAIN_FINAL_ANSWER_CHARS;
+        String trimmed = text.trim();
+        if (trimmed.length() < MIN_MAIN_FINAL_ANSWER_CHARS) {
+            return true;
+        }
+        long markdownHeadings = trimmed.lines()
+                .map(String::trim)
+                .filter(line -> line.startsWith("#"))
+                .count();
+        if (markdownHeadings >= 2) {
+            return false;
+        }
+        String lower = trimmed.toLowerCase();
+        String[] processMarkers = {
+                "let me", "now i have", "i have enough", "i have sufficient",
+                "compose the final", "write the final", "final answer and terminate",
+                "让我", "我需要整理", "现在可以", "撰写完整", "生成最终报告"
+        };
+        int markerCount = 0;
+        for (String marker : processMarkers) {
+            if (lower.contains(marker)) {
+                markerCount++;
+            }
+        }
+        return markdownHeadings == 0 ? markerCount >= 1 : markerCount >= 2;
     }
 
     /**
      * 在仅过渡语 + terminate 等场景下，基于当前完整对话（含工具返回）补写一条无工具的最终用户可见答复。
      */
     private void synthesizeMainAgentFinalAnswer() {
-        if (finalAnswerSyntheses >= RecoveryBudget.defaults().maxFinalAnswerSyntheses()) {
-            return;
-        }
-        RecoveryDecision decision = agentHook.beforeFinalAnswer(baseHookContext(null, null, null, finalAnswerSyntheses));
-        emitHookEvent("before_final_answer", null, null);
-        finalAnswerSyntheses++;
-        try {
-            Prompt prompt = Prompt.builder()
-                    .chatOptions(this.chatOptions)
-                    .messages(contextManagementService.applyPromptBudget(this.chatMemory.get(this.chatSessionId)))
-                    .build();
-            String synthesisSystem = """
-                    你已经完成全部工具检索与委派。请仅根据当前对话中的用户问题与工具返回内容，写出「最终给用户看的」完整答复：
-                    - 严格满足用户最初要求的格式（如结构化综述、分点、对比表、时间线等）；
-                    - 正文使用 Markdown；不要以「我需要搜索」「正在整理」「让我整理一下」等过程性套话开头，也不要复述本段系统说明；
-                    - 禁止调用任何工具，只输出最终正文。
-                    """;
-            ChatResponse synth = this.chatClient
-                    .prompt(prompt)
-                    .system(synthesisSystem)
-                    .call()
-                    .chatClientResponse()
-                    .chatResponse();
-            Assert.notNull(synth, "Synthesis chat response cannot be null");
-            AssistantMessage out = synth.getResult().getOutput();
-            if (out == null) {
-                log.warn("Synthesis produced null assistant output");
-                return;
-            }
-            if (out.getToolCalls() != null && !out.getToolCalls().isEmpty()) {
-                log.warn("Synthesis round requested tools; dropping tool calls and persisting text only");
-                out = AssistantMessage.builder()
-                        .content(out.getText())
+        int maxSyntheses = RecoveryBudget.defaults().maxFinalAnswerSyntheses();
+        while (finalAnswerSyntheses < maxSyntheses) {
+            RecoveryDecision decision = agentHook.beforeFinalAnswer(
+                    baseHookContext(null, null, null, finalAnswerSyntheses));
+            emitHookEvent("before_final_answer", null, null);
+            int attempt = ++finalAnswerSyntheses;
+            try {
+                Prompt prompt = Prompt.builder()
+                        .chatOptions(this.chatOptions)
+                        .messages(contextManagementService.applyPromptBudget(this.chatMemory.get(this.chatSessionId)))
                         .build();
+                String retryInstruction = attempt > 1
+                        ? "上一次合成仍是计划或过渡语，已被系统拒绝。本次必须直接从一级标题开始给出完整报告。"
+                        : "";
+                String synthesisSystem = """
+                        你已经完成全部工具检索与委派。请仅根据当前对话中的用户问题与工具返回内容，写出「最终给用户看的」完整答复：
+                        - 严格满足用户最初要求的格式（如结构化综述、分点、对比表、时间线等）；
+                        - 正文使用 Markdown，至少包含两个标题和明确结论边界；
+                        - 不要以「我需要搜索」「正在整理」「让我整理一下」「我会撰写」等过程性套话开头，也不要复述本段系统说明；
+                        - 禁止调用任何工具，只输出最终正文。
+                        """ + retryInstruction;
+                ChatResponse synth = this.chatClient
+                        .prompt(prompt)
+                        .system(synthesisSystem)
+                        .call()
+                        .chatClientResponse()
+                        .chatResponse();
+                Assert.notNull(synth, "Synthesis chat response cannot be null");
+                AssistantMessage out = synth.getResult().getOutput();
+                if (out == null) {
+                    log.warn("Synthesis attempt {} produced null assistant output", attempt);
+                    continue;
+                }
+                if (out.getToolCalls() != null && !out.getToolCalls().isEmpty()) {
+                    log.warn("Synthesis round requested tools; dropping tool calls and validating text only");
+                    out = AssistantMessage.builder()
+                            .content(out.getText())
+                            .build();
+                }
+                if (needsMainAgentFinalAnswerSynthesis(out) && attempt < maxSyntheses) {
+                    log.warn("Synthesis attempt {} still looks like planning text; retrying once", attempt);
+                    continue;
+                }
+                if (needsMainAgentFinalAnswerSynthesis(out)) {
+                    out = AssistantMessage.builder()
+                            .content("# 报告生成失败\n\n## 运行状态\n\n本次智能体运行在两次最终合成后仍未形成可审查正文，"
+                                    + "因此不得把过程性草稿作为实验报告；请保留工具记录并将本次运行判为失败后重跑。")
+                            .build();
+                }
+                this.lastChatResponse = synth;
+                saveMessage(out);
+                this.chatMemory.add(this.chatSessionId, out);
+                refreshPendingMessages();
+                return;
+            } catch (Exception e) {
+                log.warn("Main agent final-answer synthesis attempt {} failed after hook {}: {}",
+                        attempt, decision.action(), e.getMessage());
             }
-            this.lastChatResponse = synth;
-            saveMessage(out);
-            this.chatMemory.add(this.chatSessionId, out);
-            refreshPendingMessages();
-        } catch (Exception e) {
-            log.warn("Main agent final-answer synthesis failed after hook {}: {}", decision.action(), e.getMessage());
         }
     }
 
@@ -702,6 +747,9 @@ public class JChatMind {
         if (think()) {
             execute();
         } else { // 没有工具调用
+            if (role == AgentRole.MAIN && needsMainAgentFinalAnswerSynthesis(lastThinkAssistantMessage)) {
+                synthesizeMainAgentFinalAnswer();
+            }
             agentState = AgentState.FINISHED;
         }
     }
