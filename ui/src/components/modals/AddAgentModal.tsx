@@ -54,12 +54,12 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
     description: "",
     systemPrompt:
       "你是一个航天科技情报分析智能体，擅长基于资料线索、公开信息和情报库内容，对航天任务、技术路线、机构动向和产业事件进行克制、可追溯的分析。",
-    model: "deepseek-chat",
+    model: "deepseek-v4.1-flash",
     allowedTools: [],
     allowedKbs: [],
     chatOptions: {
-      temperature: 0.7,
-      topP: 1.0,
+      temperature: 0.6,
+      topP: 0.9,
       messageLength: 20,
     },
   });
@@ -77,9 +77,9 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
         allowedTools: editingAgent.allowedTools || [],
         allowedKbs: editingAgent.allowedKbs || [],
         chatOptions: editingAgent.chatOptions || {
-          temperature: 0.7,
-          topP: 1.0,
-          messageLength: 10,
+          temperature: 0.6,
+          topP: 0.9,
+          messageLength: 20,
         },
       });
     } else {
@@ -89,13 +89,13 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
         description: "",
         systemPrompt:
           "你是一个航天科技情报分析智能体，擅长基于资料线索、公开信息和情报库内容，对航天任务、技术路线、机构动向和产业事件进行克制、可追溯的分析。",
-        model: "deepseek-chat",
+        model: "deepseek-v4.1-flash",
         allowedTools: [],
         allowedKbs: [],
         chatOptions: {
-          temperature: 0.7,
-          topP: 1.0,
-          messageLength: 10,
+          temperature: 0.6,
+          topP: 0.9,
+          messageLength: 20,
         },
       });
     }
@@ -203,12 +203,12 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                   <Select
                     options={[
                       {
-                        value: "deepseek-chat",
-                        label: "deepseek-chat",
+                        value: "deepseek-v4.1-flash",
+                        label: "deepseek-v4.1-flash",
                       },
                       {
-                        value: "glm-4.6",
-                        label: "glm-4.6",
+                        value: "GLM-5.3",
+                        label: "GLM-5.3",
                       },
                     ]}
                     placeholder="请选择分析模型"

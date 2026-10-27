@@ -34,7 +34,7 @@ public class AgentDTO {
 
     @Getter
     public enum ModelType {
-        DEEPSEEK("deepseek", "deepseek-chat"),
+        DEEPSEEK("deepseek-v4.1-flash", "deepseek", "deepseek-chat"),
         GLM_5_3("GLM-5.3", "glm-4.6");
 
         @JsonValue
@@ -64,9 +64,9 @@ public class AgentDTO {
         private Double topP;
         private Integer messageLength; // 聊天消息窗口长度
 
-        private static final Double DEFAULT_TEMPERATURE = 0.7;
-        private static final Double DEFAULT_TOP_P = 1.0;
-        private static final Integer DEFAULT_MESSAGE_LENGTH = 10;
+        private static final Double DEFAULT_TEMPERATURE = 0.6;
+        private static final Double DEFAULT_TOP_P = 0.9;
+        private static final Integer DEFAULT_MESSAGE_LENGTH = 20;
 
         public static ChatOptions defaultOptions() {
             return ChatOptions.builder()
