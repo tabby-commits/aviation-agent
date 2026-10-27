@@ -40,6 +40,17 @@ class QuestionReportPipelineTest {
                 "The institution reported 27 satellites in orbit after its launch.");
     }
 
+    /** 空模块 + 空写作稿：流水线应走回退路径（现状任务结论直接成文）。 */
+    private void stubModuleAndWriter(ResearchRoleModel roles) {
+        when(roles.analyzeDimension(anyString(), anyString(), anyString(), anyList(), anyList(),
+                anyList(), anyMap(), anyString()))
+                .thenAnswer(invocation -> new ResearchRoleModel.DimensionAnalysis(
+                        invocation.getArgument(1), List.of()));
+        when(roles.writeReport(anyString(), anyList(), anyList(), anyList(), anyList(), anyMap(), anyString()))
+                .thenReturn(new ResearchRoleModel.WriterDraft(List.of(), List.of(), List.of(),
+                        List.of(), List.of(), List.of()));
+    }
+
     @Test
     void repeatedQuestionsPlanAndGenerateIndependentReports() {
         ResearchRoleModel roles = mock(ResearchRoleModel.class);
@@ -53,10 +64,8 @@ class QuestionReportPipelineTest {
         ResearchRoleModel.Actor actor = new ResearchRoleModel.Actor("a1", "主体一", "CN", List.of("主体一"));
         ResearchRoleModel.Task taskA = new ResearchRoleModel.Task("a", "actor-status", "a1", "产业成熟度",
                 "产能水平：主体一", "分析主体一进度", List.of("query-a"));
-        ResearchRoleModel.Task taskB = new ResearchRoleModel.Task("b", "actor-status", "a1", "科技创新能力",
-                "研究热度趋势：主体一", "分析主体一运营", List.of("query-b"));
         when(roles.plan(eq("分析低轨建设"), anyString())).thenReturn(
-                new ResearchRoleModel.Plan("低轨建设分析", "leo", List.of(actor), List.of(), List.of(taskA, taskB)));
+                new ResearchRoleModel.Plan("低轨建设分析", "leo", List.of(actor), List.of(), List.of(taskA)));
         when(collector.collect(anyString(), anyList(), anyInt(), anyInt(), any(Duration.class), any()))
                 .thenReturn(new WebEvidenceCollector.Retrieval(List.of(evidence()), List.of(), List.of(), List.of()));
         when(roles.analyze(anyString(), any(), anyList(), anyString(), anyString()))
@@ -65,8 +74,7 @@ class QuestionReportPipelineTest {
                                 "fact", List.of(new ResearchRoleModel.Quote("source-1",
                                 "The institution reported 27 satellites in orbit after its launch.")))),
                         List.of(), List.of()));
-        when(roles.synthesize(anyString(), anyList(), anyList(), anyList(), anyMap(), anyString()))
-                .thenReturn(new ResearchRoleModel.Synthesis(List.of(), List.of(), List.of(), List.of()));
+        stubModuleAndWriter(roles);
 
         ReportDocument first = pipeline.run("session", "分析低轨建设", text -> {});
         ReportDocument second = pipeline.run("session", "分析低轨建设", text -> {});
@@ -76,11 +84,11 @@ class QuestionReportPipelineTest {
         assertEquals(1, first.version());
         assertEquals(2, second.version());
         assertEquals("低轨建设分析", second.title());
-        assertEquals(2, second.dimensions().size());
+        assertEquals(1, second.dimensions().size());
         verify(roles, times(2)).plan("分析低轨建设", "skill invoked");
-        verify(roles, times(4)).analyze(anyString(), any(), anyList(),
+        verify(roles, times(2)).analyze(anyString(), any(), anyList(),
                 eq("skill invoked"), eq("skill invoked"));
-        verify(collector, times(4)).collect(anyString(), anyList(), anyInt(), anyInt(),
+        verify(collector, times(2)).collect(anyString(), anyList(), anyInt(), anyInt(),
                 any(Duration.class), any());
         verify(store, times(2)).save(any(ReportDocument.class));
     }
@@ -140,8 +148,7 @@ class QuestionReportPipelineTest {
                                 "fact", List.of(new ResearchRoleModel.Quote("source-1",
                                 "The institution reported 27 satellites in orbit after its launch.")))),
                         List.of("缺少在轨基准日"), List.of()));
-        when(roles.synthesize(anyString(), anyList(), anyList(), anyList(), anyMap(), anyString()))
-                .thenReturn(new ResearchRoleModel.Synthesis(List.of(), List.of(), List.of(), List.of()));
+        stubModuleAndWriter(roles);
 
         ReportDocument report = pipeline.run("session", "主体一在轨规模", text -> {});
 
@@ -153,7 +160,7 @@ class QuestionReportPipelineTest {
     }
 
     @Test
-    void fieldCalculationsAreRecomputedAndRenderedIntoCompareClaims() {
+    void writerAgentSelectsIndicatorsAndNumbersStayTraceable() {
         ResearchRoleModel roles = mock(ResearchRoleModel.class);
         WebEvidenceCollector collector = mock(WebEvidenceCollector.class);
         SkillService skills = mock(SkillService.class);
@@ -168,10 +175,8 @@ class QuestionReportPipelineTest {
                 "产能水平：US 星座", "US 星座在轨规模", List.of("query-us"));
         ResearchRoleModel.Task taskCn = new ResearchRoleModel.Task("t2", "actor-status", "a2", "产业成熟度",
                 "产能水平：CN 星座", "CN 星座在轨规模", List.of("query-cn"));
-        ResearchRoleModel.Task compare = new ResearchRoleModel.Task("t3", "dimension-compare", null, "产业成熟度",
-                "产能水平：在轨规模差距", "比较在轨规模", List.of("query-compare"));
         when(roles.plan(anyString(), anyString())).thenReturn(new ResearchRoleModel.Plan("规模比较", "leo",
-                List.of(us, cn), List.of("在轨规模"), List.of(taskUs, taskCn, compare)));
+                List.of(us, cn), List.of("在轨规模"), List.of(taskUs, taskCn)));
         WebEvidenceCollector.Evidence usEvidence = new WebEvidenceCollector.Evidence("source-us", "US tracker",
                 "https://example.org/us", "2026-01-01", "2026-10-26", "sha-us", "us.html",
                 "The tracker counted 200 satellites in orbit on 2026-01-01.");
@@ -203,12 +208,22 @@ class QuestionReportPipelineTest {
         when(roles.compare(anyList(), anyList())).thenReturn(new ResearchRoleModel.ComparePlan(List.of(
                 new ResearchRoleModel.CalcPlanItem("calc-1", "ratio", "在轨卫星数", "颗",
                         "a1.inOrbit", "a2.inOrbit", "两侧同日基准"))));
-        when(roles.composeCompare(anyString(), eq(compare), anyList(), anyList(), anyList(), anyString()))
-                .thenReturn(new ResearchRoleModel.CompareDraft(List.of(
-                        new ResearchRoleModel.CompareClaimDraft(
-                                "按已核验同日存量，US 侧在轨为 CN 侧的 4 倍。", "calc", "calc-1", List.of()))));
-        when(roles.synthesize(anyString(), anyList(), anyList(), anyList(), anyMap(), anyString()))
-                .thenReturn(new ResearchRoleModel.Synthesis(List.of(), List.of(), List.of(), List.of()));
+        when(roles.analyzeDimension(anyString(), anyString(), anyString(), anyList(), anyList(),
+                anyList(), anyMap(), anyString()))
+                .thenAnswer(invocation -> new ResearchRoleModel.DimensionAnalysis(
+                        invocation.getArgument(1),
+                        List.of(new ResearchRoleModel.IndicatorAssessment("产能水平", "verified",
+                                "两侧在轨规模已核验，比例约 4 倍。", List.of("a1.inOrbit", "a2.inOrbit")))));
+        // 写作 Agent 采用“产能水平”：正文数字 200/50 均可回溯到卡片字段；另带一条无法回溯数字的候选应被拒
+        when(roles.writeReport(anyString(), anyList(), anyList(), anyList(), anyList(), anyMap(), anyString()))
+                .thenReturn(new ResearchRoleModel.WriterDraft(
+                        List.of(new ResearchRoleModel.WriterIndicator("产业成熟度", "产能水平",
+                                "双侧已核验同日存量", "按已核验同日存量，US 侧在轨 200 颗、CN 侧在轨 50 颗。",
+                                List.of("a1.inOrbit", "a2.inOrbit")),
+                                new ResearchRoleModel.WriterIndicator("科技创新能力", "核心论文数量",
+                                        "数字不可回溯", "论文总量已达 9999 篇。", List.of("a1.inOrbit"))),
+                        List.of(), List.of(), List.of(), List.of(),
+                        List.of("科研机构贡献：论文元数据未覆盖本轮主体")));
 
         ReportDocument report = pipeline.run("session", "比较中美在轨规模", text -> {});
 
@@ -216,9 +231,17 @@ class QuestionReportPipelineTest {
         assertEquals("4", report.calculations().get(0).value());
         assertEquals("倍", report.calculations().get(0).unit());
         assertEquals(2, report.statusCards().size());
+        assertTrue(report.excludedIndicators().keySet().stream()
+                .anyMatch(key -> key.startsWith("未采用：科研机构贡献")),
+                "写作 Agent 弃用的指标应留档");
+        List<Indicator> maturity = report.dimensions().stream()
+                .filter(d -> d.name().equals("产业成熟度")).findFirst().orElseThrow().indicators();
+        assertTrue(maturity.stream().anyMatch(i -> i.name().equals("产能水平")
+                        && i.paragraphs().get(0).text().contains("200")),
+                "被采用的指标正文应进入报告");
         assertTrue(report.dimensions().stream().flatMap(d -> d.indicators().stream())
-                .flatMap(i -> i.paragraphs().stream())
-                .anyMatch(claim -> "4".equals(claim.value()) && claim.text().contains("4 倍")));
+                        .noneMatch(i -> i.name().equals("核心论文数量")),
+                "含不可回溯数字的指标应被拒收");
     }
 
     @Test
@@ -273,8 +296,7 @@ class QuestionReportPipelineTest {
                                 "fact", List.of(new ResearchRoleModel.Quote("source-cn",
                                 "The tracker counted 50 satellites in orbit on 2026-01-01.")))),
                         List.of(), List.of()));
-        when(roles.synthesize(anyString(), anyList(), anyList(), anyList(), anyMap(), anyString()))
-                .thenReturn(new ResearchRoleModel.Synthesis(List.of(), List.of(), List.of(), List.of()));
+        stubModuleAndWriter(roles);
 
         ReportDocument report = pipeline.run("session", "比较中美在轨规模", text -> {});
 

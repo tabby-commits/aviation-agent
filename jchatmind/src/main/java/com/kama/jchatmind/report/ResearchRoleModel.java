@@ -20,14 +20,16 @@ import java.util.Set;
 public class ResearchRoleModel {
     private static final Set<String> DIMENSIONS = Set.of("战略重要性", "技术前瞻性", "科技创新能力", "产业成熟度");
     /** Fallback when the framework Skill cannot be parsed; the Skill table is the authoritative list. */
-    private static final Set<String> FALLBACK_ANALYSABLE = Set.of("头部航天主体布局动向", "范式变革潜力",
-            "核心论文数量", "高被引论文数量与占比", "研究热度趋势", "国际合作论文比例与结构",
-            "已公开最高技术指标", "公开技术性能变化", "科研机构贡献", "产能水平", "产品迭代速度", "应用拓展能力");
-    private static final Set<String> ANALYSABLE_STATES = Set.of("可计算", "条件可分析", "可定量描述");
+    private static final Set<String> FALLBACK_INDICATORS = Set.of("战略政策强度", "国家安全关联程度", "关键技术管制程度",
+            "国家重大项目部署", "头部航天主体布局动向", "范式变革潜力", "核心论文数量", "高被引论文数量与占比",
+            "研究热度趋势", "国际合作论文比例与结构", "已公开最高技术指标", "公开技术性能变化", "科研机构贡献",
+            "产能水平", "产品迭代速度", "应用拓展能力");
+    /** 协调规划允许的尝试次数：首轮 + 5 轮重试。 */
+    private static final int MAX_PLAN_ATTEMPTS = 6;
     private final ChatClient client;
     private final ObjectMapper mapper;
     private final SkillService skills;
-    private volatile Set<String> analysableIndicators;
+    private volatile Set<String> frameworkIndicators;
 
     public ResearchRoleModel(ChatClientRegistry registry, ObjectMapper mapper, SkillService skills,
                              @Value("${jchatmind.report.model:deepseek}") String model) {
@@ -58,6 +60,18 @@ public class ResearchRoleModel {
     public record Synthesis(List<GapRow> gapMatrix, List<SynthesisClaim> abstractLines,
                             List<SynthesisClaim> overallAssessment, List<SynthesisClaim> summaryLines) {}
 
+    /** 全指标研判：一个维度下每个指标的最佳努力分析（Sub Agent 输出，供写作 Agent 取材）。 */
+    public record IndicatorAssessment(String indicator, String evidenceState, String assessment,
+                                      List<String> basisClaimIds) {}
+    public record DimensionAnalysis(String dimension, List<IndicatorAssessment> assessments) {}
+
+    /** 写作 Agent 的择优结果：采用的指标正文 + 摘要/总结/研判/差距矩阵 + 丢弃清单。 */
+    public record WriterIndicator(String dimension, String indicator, String reason, String text,
+                                  List<String> basisClaimIds) {}
+    public record WriterDraft(List<WriterIndicator> indicators, List<SynthesisClaim> abstractLines,
+                              List<SynthesisClaim> overallAssessment, List<SynthesisClaim> summaryLines,
+                              List<GapRow> gapMatrix, List<String> droppedIndicators) {}
+
     public record CalcPlanItem(String id, String aggregation, String metric, String unit,
                                String leftRef, String rightRef, String note) {}
     public record ComparePlan(List<CalcPlanItem> calculations) {}
@@ -68,42 +82,39 @@ public class ResearchRoleModel {
     public Plan plan(String question, String frameworkSkill) {
         String result = complete("""
                 你是航天竞争情报协调 Agent。仅输出 JSON，不能输出 Markdown。
-                任务：把用户问题拆成一份“主体清单 + 研究子任务 + 比较维度”的研究计划。
+                任务：把用户问题拆成一份“主体清单 + 主体现状研究子任务”的研究计划。
+                四个维度的全指标研判、比较与择优成文由流水线后续的分析 Agent 和写作 Agent 固定执行，
+                计划里不需要、也不允许出现比较类任务。
 
                 第一步，先确定主体清单 actors：把问题涉及的代表性主体全部列出（比较类问题两侧各至少
                 一个，能多列就多列，例如 Starlink、Kuiper、国网/Guowang、千帆/Qianfan）。每个主体给出
                 country（CN/US）与 aliases（中英文检索别名数组）。
 
-                第二步，拆任务 tasks，两类：
-                - actor-status（主体现状）：每个主体必须恰好一个，question 写“该主体截至当前的星座建设
-                  现状：规划规模、在轨卫星数、累计发射、最新版本与迭代、商业化/组网节点”。这是报告的
-                  分项目章节，不允许合并多个主体。
-                - dimension-compare（维度比较）：针对问题关心的每个差距维度各一个，question 写清比较
-                  什么（如“中美部署节奏与在轨规模差距”“发射运力与成本约束”“版本迭代速度差距”）。
-                  比较任务不采集新证据，只使用各主体现状任务的核验结果。
+                第二步，拆任务 tasks：每个主体必须恰好一个 actor-status（主体现状）任务，question 写
+                “该主体截至当前的星座建设现状：规划规模、在轨卫星数、累计发射、最新版本与迭代、
+                商业化/组网节点”。这是报告的分项目章节，不允许合并多个主体。
 
                 规则：
-                1. 有主体比较的问题，tasks 必须是“每主体一个 actor-status + 至少一个 dimension-compare”，
-                   总数上限 8；纯单主体问题只需 actor-status。
-                2. dimension 必须是战略重要性、技术前瞻性、科技创新能力、产业成熟度之一；indicator 只能
-                   以框架中本阶段可分析的指标名称开头，冒号后写具体对象。发射、部署、回收复用记录归入
-                   “产能水平”；版本节点归入“产品迭代速度”。
-                3. searchQueries：actor-status 任务 2—4 条，必须包含主体官方或权威来源词（如
-                   site:spacex.com、eoPortal），中国主体必须含中文检索词；dimension-compare 任务 1—2 条。
-                4. compareAspects 列出全部比较维度名，与 dimension-compare 任务一一对应。
-                5. 不预设结论；没有公开证据的指标在报告中省略。topic 只填 leo、rocket、mixed 或 other。
+                1. tasks 数量 = 主体数量，全部为 actor-status，上限 8；taskType 只有这一种。
+                2. dimension 必须是战略重要性、技术前瞻性、科技创新能力、产业成熟度之一；indicator
+                   只能以框架 28 项指标的完整名称开头，冒号后写具体对象。发射、部署、回收复用记录归入
+                   “产能水平”；版本节点归入“产品迭代速度”；政策与战略事实归入对应政策类指标。
+                3. searchQueries：每个任务 2—4 条，必须包含主体官方或权威来源词（如
+                   site:spacex.com、eoPortal），中国主体必须含中文检索词；政策类问题加官方来源
+                   检索词（如 site:nasa.gov、site:gov.cn）。
+                4. 不预设结论。topic 只填 leo、rocket、mixed 或 other。
 
                 JSON 结构：
                 {"title":"针对问题的报告标题","topic":"leo",
                  "actors":[{"id":"a1","name":"Starlink","country":"US","aliases":["Starlink","SpaceX"]}],
-                 "compareAspects":["部署节奏与在轨规模"],
+                 "compareAspects":[],
                  "tasks":[{"id":"t1","taskType":"actor-status","actorId":"a1","dimension":"产业成熟度",
                            "indicator":"产能水平：Starlink","question":"...","searchQueries":["..."]}]}
                 今天是 %s。研究只涉及公开可观察的事实，不计算综合排名。
                 """.formatted(LocalDate.now(ZoneId.of("Asia/Shanghai")))
                 + "\n本轮竞争力框架 Skill：\n" + frameworkSkill, question);
         String error = null;
-        for (int attempt = 0; attempt < 2; attempt++) {
+        for (int attempt = 0; attempt < MAX_PLAN_ATTEMPTS; attempt++) {
             try {
                 Plan plan = mapper.readValue(json(result), Plan.class);
                 error = planError(plan);
@@ -111,14 +122,13 @@ public class ResearchRoleModel {
             } catch (Exception e) {
                 error = e.getMessage();
             }
-            if (attempt == 0) result = complete("你是协调 Agent。只输出修正后的完整 JSON，不输出说明或 Markdown。",
+            if (attempt < MAX_PLAN_ATTEMPTS - 1) result = complete("你是协调 Agent。只输出修正后的完整 JSON，不输出说明或 Markdown。",
                     "原问题：" + question + "\n上一版计划：" + result + "\n需要修正：" + error
                             + "。要求：actors 覆盖问题涉及的全部代表性主体；tasks 中每个主体恰好一个 "
-                            + "taskType=actor-status 的任务（带 actorId），比较类问题再加至少一个 "
-                            + "taskType=dimension-compare 的任务；dimension 只能是战略重要性、技术前瞻性、"
-                            + "科技创新能力、产业成熟度；indicator 必须以本阶段可分析的框架指标名称开头；"
-                            + "回收复用记录归入产能水平；每个任务都有 id、taskType、dimension、indicator、"
-                            + "question 和 searchQueries。");
+                            + "taskType=actor-status 的任务（带 actorId），不要输出其他 taskType；dimension 只能是"
+                            + "战略重要性、技术前瞻性、科技创新能力、产业成熟度；indicator 必须以下列指标名称之一"
+                            + "开头（冒号后写具体对象）：" + String.join("、", frameworkIndicators())
+                            + "；每个任务都有 id、taskType、dimension、indicator、question 和 searchQueries。");
         }
         throw new IllegalStateException("协调 Agent 未能形成有效任务计划：" + error);
     }
@@ -138,7 +148,6 @@ public class ResearchRoleModel {
         if (plan.tasks() == null || plan.tasks().size() < 1 || plan.tasks().size() > 8)
             return "任务数量应为 1—8，实际为 " + (plan.tasks() == null ? 0 : plan.tasks().size());
         Set<String> coveredActors = new LinkedHashSet<>();
-        int compareCount = 0;
         Set<String> taskIds = new LinkedHashSet<>();
         for (Task task : plan.tasks()) {
             if (task.id() == null || task.id().isBlank() || task.question() == null || task.question().isBlank()
@@ -148,31 +157,28 @@ public class ResearchRoleModel {
                 return "任务字段缺失：" + task.id();
             if (!taskIds.add(task.id())) return "任务 ID 重复：" + task.id();
             String type = task.taskType() == null ? "" : task.taskType();
-            if (!"actor-status".equals(type) && !"dimension-compare".equals(type))
-                return "taskType 只能是 actor-status 或 dimension-compare：" + task.id();
+            if (!"actor-status".equals(type))
+                return "taskType 只能是 actor-status：" + task.id();
             if (!DIMENSIONS.contains(task.dimension())) return "一级维度不在四维框架内：" + task.dimension();
             String indicatorName = task.indicator().split("[:：]", 2)[0].trim();
-            if (!analysableIndicators().contains(indicatorName))
-                return "二级指标不在本阶段可分析范围内：" + task.indicator();
-            if ("actor-status".equals(type)) {
-                if (task.actorId() == null || !actorIds.contains(task.actorId()))
-                    return "actor-status 任务引用了不存在的主体：" + task.id();
-                if (!coveredActors.add(task.actorId()))
-                    return "同一主体出现了多个 actor-status 任务：" + task.actorId();
-            } else {
-                compareCount++;
-            }
+            if (!frameworkIndicators().contains(indicatorName))
+                return "二级指标不在框架 28 项指标内：" + task.indicator();
+            if (task.actorId() == null || !actorIds.contains(task.actorId()))
+                return "actor-status 任务引用了不存在的主体：" + task.id();
+            if (!coveredActors.add(task.actorId()))
+                return "同一主体出现了多个 actor-status 任务：" + task.actorId();
         }
-        boolean comparison = plan.actors().stream().map(Actor::country).distinct().count() > 1
-                || coveredActors.size() > 1;
-        if (comparison && (coveredActors.size() < plan.actors().size() || compareCount == 0))
-            return "比较类问题必须每个主体一个 actor-status 任务，且至少一个 dimension-compare 任务";
+        if (coveredActors.size() != plan.actors().size())
+            return "每个主体必须恰好一个 actor-status 任务";
         return null;
     }
 
-    /** The framework Skill table is authoritative; parsing it once keeps Java and the Skill from drifting apart. */
-    private Set<String> analysableIndicators() {
-        Set<String> cached = analysableIndicators;
+    /**
+     * 全指标研判模式下，框架 28 项指标全部允许进入计划；表中的“本阶段状态”列
+     * 描述证据要求与边界，不再是准入门槛。Skill 表格仍是权威清单。
+     */
+    private Set<String> frameworkIndicators() {
+        Set<String> cached = frameworkIndicators;
         if (cached != null) return cached;
         Set<String> parsed = new LinkedHashSet<>();
         try {
@@ -181,13 +187,12 @@ public class ResearchRoleModel {
                 String[] cells = line.split("\\|");
                 if (cells.length < 4) continue;
                 String indicator = cells[2].trim();
-                String state = cells[3].trim();
-                if (!indicator.isBlank() && !indicator.equals("指标") && ANALYSABLE_STATES.contains(state))
+                if (!indicator.isBlank() && !indicator.equals("指标"))
                     parsed.add(indicator);
             }
         } catch (Exception ignored) { /* Fall back to the built-in list below. */ }
-        if (parsed.isEmpty()) parsed.addAll(FALLBACK_ANALYSABLE);
-        analysableIndicators = parsed;
+        if (parsed.isEmpty()) parsed.addAll(FALLBACK_INDICATORS);
+        frameworkIndicators = parsed;
         return parsed;
     }
 
@@ -384,6 +389,147 @@ public class ResearchRoleModel {
             return mapper.writeValueAsString(value);
         } catch (Exception e) {
             return String.valueOf(value);
+        }
+    }
+
+    private void appendVerified(StringBuilder packet, List<ReportDocument.Claim> verified) {
+        for (ReportDocument.Claim claim : verified)
+            packet.append(claim.id()).append(" | ").append(claim.text()).append("\n");
+    }
+
+    private void appendCards(StringBuilder cardText, List<ReportDocument.StatusCard> cards) {
+        for (ReportDocument.StatusCard card : cards)
+            cardText.append(card.actorName()).append("(").append(card.country()).append(")：")
+                    .append(card.fields().stream()
+                            .map(f -> f.field() + "=" + f.value()
+                                    + (f.asOfDate() == null ? "" : "@" + f.asOfDate()) + "[" + f.tier() + "]")
+                            .reduce((a, b) -> a + "；" + b).orElse("无字段"))
+                    .append("\n");
+    }
+
+    private void appendCalculations(StringBuilder calcText, List<ReportDocument.Calculation> calculations) {
+        for (ReportDocument.Calculation calc : calculations)
+            calcText.append(calc.id()).append(" | ").append(calc.formula()).append(" = ")
+                    .append(calc.value()).append(calc.unit()).append("\n");
+    }
+
+    /**
+     * 维度模块分析 Agent：对给定维度的全部指标逐项研判，基于已有材料尽最大努力给出详尽表达，
+     * 材料不足时明确证据缺口；输出供写作 Agent 汇总取舍。
+     */
+    public DimensionAnalysis analyzeDimension(String question, String dimension, String frameworkSkill,
+                                              List<ReportDocument.Claim> verified,
+                                              List<ReportDocument.StatusCard> cards,
+                                              List<ReportDocument.Calculation> calculations,
+                                              Map<String, String> excluded, String methodsSkill) {
+        StringBuilder packet = new StringBuilder();
+        appendVerified(packet, verified);
+        StringBuilder cardText = new StringBuilder();
+        appendCards(cardText, cards);
+        StringBuilder calcText = new StringBuilder();
+        appendCalculations(calcText, calculations);
+        String result = complete("""
+                你是维度模块分析 Agent，负责维度「%s」。仅输出 JSON，不输出 Markdown。
+                对本维度框架表中的每一个指标逐项输出研判，一个都不能少：
+
+                - assessment：基于已核验结论、现状卡片与计算结果的详尽分析（200—500 字），尽最大努力
+                  挖掘已有材料的信息量；证据充分时给结论并引用依据，材料不足时写清“证据缺口是什么、
+                  需要什么材料才能补齐”，不得编造事实或数字。
+                - evidenceState：verified=有已核验结论或卡片/计算支撑 / clue=仅有线索级材料 /
+                  insufficient=本维度材料不足。
+                - basisClaimIds：引用的依据编号，只能取自已核验结论的 id、卡片字段引用
+                  （如 a1.inOrbit）或计算结果 id（如 calc-1）。
+                - 指标状态为“条件可分析”或“可计算”的按框架边界写；政策、战略类指标必须依据官方
+                  政策文件类来源的已核验结论，新闻转述只能作为线索描述。
+
+                数字、日期只能复述材料中已有的；本输出只是研判底稿，最终是否采用由写作 Agent 决定。
+
+                JSON：{"dimension":"%s","assessments":[{"indicator":"指标名","evidenceState":"verified",
+                "assessment":"...","basisClaimIds":["t1-..."]}]}
+                """.formatted(dimension, dimension)
+                + "\n本轮竞争力框架 Skill：\n" + frameworkSkill
+                + "\n本轮分析方法 Skill：\n" + methodsSkill,
+                "用户问题：" + question + "\n已核验结论：\n" + packet + "\n现状卡片：\n" + cardText
+                        + "\n计算结果：\n" + calcText + "\n未通过核验的子任务：" + excluded);
+        try {
+            DimensionAnalysis analysis = mapper.readValue(json(result), DimensionAnalysis.class);
+            return new DimensionAnalysis(dimension,
+                    analysis.assessments() == null ? List.of() : analysis.assessments());
+        } catch (Exception e) {
+            throw new IllegalStateException("维度模块分析 Agent 输出无效：" + dimension, e);
+        }
+    }
+
+    /**
+     * 写作 Agent：汇总四个维度的全指标研判底稿，决定最终采用哪些指标成文，
+     * 并写摘要、总结、整体研判与差距矩阵；被弃用指标留档说明原因。
+     */
+    public WriterDraft writeReport(String question, List<DimensionAnalysis> modules,
+                                   List<ReportDocument.Claim> verified,
+                                   List<ReportDocument.StatusCard> cards,
+                                   List<ReportDocument.Calculation> calculations,
+                                   Map<String, String> excluded, String methodsSkill) {
+        StringBuilder moduleText = new StringBuilder();
+        for (DimensionAnalysis module : modules) {
+            moduleText.append("## 维度：").append(module.dimension()).append("\n");
+            for (IndicatorAssessment item : module.assessments())
+                moduleText.append("- ").append(item.indicator()).append(" [").append(item.evidenceState())
+                        .append("] ").append(item.assessment())
+                        .append("（依据：").append(String.join(",", item.basisClaimIds() == null
+                                ? List.of() : item.basisClaimIds())).append("）\n");
+        }
+        StringBuilder packet = new StringBuilder();
+        appendVerified(packet, verified);
+        StringBuilder cardText = new StringBuilder();
+        appendCards(cardText, cards);
+        StringBuilder calcText = new StringBuilder();
+        appendCalculations(calcText, calculations);
+        String result = complete("""
+                你是写作 Agent。仅输出 JSON，不输出 Markdown。输入是四个维度模块的全指标研判底稿、
+                已核验结论、现状卡片与计算结果。你的职责是择优成文：
+
+                1. indicators：从 28 项指标的底稿中选出本报告最终采用的指标（宁缺毋滥，evidenceState
+                   为 insufficient 且无实质内容的必须丢弃）。每项输出：dimension（四维之一）、indicator
+                   （指标名）、reason（一句话采用理由）、text（成文正文，500—1200 字，充分展开已有材料，
+                   结构：已核验事实→中美两侧对比（如有）→证据边界与缺口）、basisClaimIds（正文依据，
+                   只能取自已核验结论 id、卡片字段引用（如 a1.inOrbit）或计算结果 id（如 calc-1），
+                   至少 2 条）。
+                2. droppedIndicators：被丢弃的指标名列表，每个附一句原因，格式“指标名：原因”。
+                3. abstractLines：1—3 条摘要，每条标 kind（fact/calc/inference）并列 basisClaimIds；
+                   inference 句以“综合判断：”开头且不含任何数字、日期、倍数。
+                4. overallAssessment：最多 3 条整体研判，全部以“综合判断：”开头，只做层级、结构、
+                   机制性判断，不得包含任何数字、日期、倍数，每条 basisClaimIds 至少 2 条。
+                5. summaryLines：1—3 条总结，规则同 abstractLines。
+                6. gapMatrix：差距矩阵（存在中美比较时必填，否则为空数组）——每行 aspect、usStatus
+                   （美国侧已核验事实，含数字与基准日）、cnStatus（同上）、gapStatement（有计算结果时用
+                   定量句；否则用证据差句）、evidenceStrength（strong/partial/insufficient）、basisClaimIds。
+
+                正文中的数字、日期只能复述已核验结论、卡片或计算结果；不得新算；不计算总体竞争力得分
+                或排名；未核验的内容必须标注为线索或转述。
+
+                JSON：{"indicators":[{"dimension":"产业成熟度","indicator":"产能水平","reason":"...",
+                "text":"...","basisClaimIds":["t1-..."]}],
+                "droppedIndicators":["科研机构贡献：论文元数据未覆盖本轮主体"],
+                "abstractLines":[{"text":"...","kind":"calc","basisClaimIds":["t1-..."]}],
+                "overallAssessment":[{"text":"综合判断：...","basisClaimIds":["t1-...","t2-..."]}],
+                "summaryLines":[{"text":"...","kind":"fact","basisClaimIds":["t1-..."]}],
+                "gapMatrix":[{"aspect":"...","usStatus":"...","cnStatus":"...","gapStatement":"...",
+                "evidenceStrength":"partial","basisClaimIds":["t1-..."]}]}
+                """ + "\n本轮分析方法 Skill：\n" + methodsSkill,
+                "用户问题：" + question + "\n维度研判底稿：\n" + moduleText
+                        + "\n已核验结论：\n" + packet + "\n现状卡片：\n" + cardText
+                        + "\n计算结果：\n" + calcText + "\n未通过核验的子任务：" + excluded);
+        try {
+            WriterDraft draft = mapper.readValue(json(result), WriterDraft.class);
+            return new WriterDraft(
+                    draft.indicators() == null ? List.of() : draft.indicators(),
+                    draft.abstractLines() == null ? List.of() : draft.abstractLines(),
+                    draft.overallAssessment() == null ? List.of() : draft.overallAssessment(),
+                    draft.summaryLines() == null ? List.of() : draft.summaryLines(),
+                    draft.gapMatrix() == null ? List.of() : draft.gapMatrix(),
+                    draft.droppedIndicators() == null ? List.of() : draft.droppedIndicators());
+        } catch (Exception e) {
+            throw new IllegalStateException("写作 Agent 输出无效", e);
         }
     }
 

@@ -112,8 +112,6 @@ public class QuestionReportPipeline {
                             (a, b) -> a, LinkedHashMap::new));
             List<ResearchRoleModel.Task> statusTasks = allTasks.stream()
                     .filter(t -> "actor-status".equals(t.taskType())).toList();
-            List<ResearchRoleModel.Task> compareTasks = allTasks.stream()
-                    .filter(t -> "dimension-compare".equals(t.taskType())).toList();
 
             Map<String, WebEvidenceCollector.Evidence> allEvidence = new LinkedHashMap<>();
             Map<String, List<String>> usedQuotes = new HashMap<>();
@@ -207,100 +205,150 @@ public class QuestionReportPipeline {
                     Map.of("calculationRequests", compareRequests.size()),
                     Map.of("calculationIds", calculations.stream().map(Calculation::id).toList()));
 
-            // Compare tasks consume verified cards and calculations only; no fresh web evidence.
+            // 全指标研判：四个维度各由一个模块分析 Agent 对本维度全部指标做最佳努力分析。
             Map<String, Claim> claimById = verifiedClaims.stream()
                     .collect(Collectors.toMap(Claim::id, c -> c, (a, b) -> a, LinkedHashMap::new));
             Map<String, Calculation> calculationById = calculations.stream()
                     .collect(Collectors.toMap(Calculation::id, c -> c, (a, b) -> a));
             Map<String, List<String>> fieldSourceIds = fieldSourceIndex(statusCards);
-            for (ResearchRoleModel.Task task : compareTasks) {
-                progress.accept("比较 Agent：综合核验结果比较“" + task.indicator() + "”");
-                String methodsSkill = invokeSkill(runId, sessionId, step, "compare:" + task.id(),
-                        "ci-analysis-methods", task.question());
-                ResearchRoleModel.CompareDraft draft;
+            String methodsSkill = invokeSkill(runId, sessionId, step, "dimension-analysis",
+                    "ci-analysis-methods", question);
+            List<ResearchRoleModel.DimensionAnalysis> modules = new ArrayList<>();
+            for (String dimension : List.of("战略重要性", "技术前瞻性", "科技创新能力", "产业成熟度")) {
+                progress.accept("模块分析 Agent：研判维度“" + dimension + "”的全部指标");
                 try {
-                    draft = roles.composeCompare(question, task, calculations, statusCards,
-                            verifiedClaims.stream().limit(40).toList(), methodsSkill);
+                    ResearchRoleModel.DimensionAnalysis module = roles.analyzeDimension(
+                            question, dimension, frameworkSkill, verifiedClaims, statusCards,
+                            calculations, excluded, methodsSkill);
+                    modules.add(module);
+                    store.stage(runId, "dimension:" + dimension, "done",
+                            Map.of("dimension", dimension),
+                            Map.of("assessments", module.assessments().stream()
+                                    .map(a -> a.indicator() + "[" + a.evidenceState() + "]").toList()));
+                    emit(sessionId, step, "dimension_analysis", null,
+                            "模块分析：" + dimension + " " + module.assessments().size() + " 项指标研判完成",
+                            Map.of("note", dimension + "：" + module.assessments().size() + " 项",
+                                    "data", Map.of("dimension", dimension,
+                                            "states", module.assessments().stream()
+                                                    .map(a -> a.indicator() + ":" + a.evidenceState()).toList())));
                 } catch (Exception e) {
-                    store.stage(runId, "compare:" + task.id(), "failed", task,
+                    excluded.put(dimension, "维度模块分析输出无效：" + e.getMessage());
+                    store.stage(runId, "dimension:" + dimension, "failed",
+                            Map.of("dimension", dimension),
                             Map.of("reason", String.valueOf(e.getMessage())));
-                    excluded.put(task.indicator(), "比较角色输出无效：" + e.getMessage());
-                    continue;
                 }
-                List<Claim> claims = new ArrayList<>();
-                List<String> rejected = new ArrayList<>();
-                for (ResearchRoleModel.CompareClaimDraft candidate : draft.claims().stream().limit(4).toList()) {
-                    String reason = compareRejection(candidate, calculationById, claimById, fieldSourceIds);
-                    if (reason != null) {
-                        rejected.add(reason);
-                        continue;
-                    }
-                    List<String> sourceIds;
-                    String calculationId = null, value = null, unit = null;
-                    if ("calc".equals(candidate.kind()) && candidate.calculationId() != null) {
-                        Calculation calculation = calculationById.get(candidate.calculationId());
-                        calculationId = calculation.id();
-                        value = calculation.value();
-                        unit = calculation.unit();
-                        sourceIds = calculation.inputIds().stream()
-                                .flatMap(ref -> fieldSourceIds.getOrDefault(ref, List.of()).stream())
-                                .distinct().toList();
-                    } else {
-                        sourceIds = candidate.basisClaimIds().stream()
-                                .flatMap(id -> claimById.get(id).sourceIds().stream())
-                                .distinct().toList();
-                    }
+            }
+            store.stage(runId, "dimension-analysis", "done",
+                    Map.of("modules", modules.size()),
+                    Map.of("dimensions", modules.stream()
+                            .map(m -> m.dimension() + ":" + m.assessments().size()).toList()));
+
+            // 写作 Agent：从全指标研判底稿中择优采用，输出正文、摘要、研判与差距矩阵。
+            progress.accept("写作 Agent：择优采用指标并汇总成文");
+            String synthesisSkill = invokeSkill(runId, sessionId, step, "synthesis",
+                    "ci-analysis-methods", question);
+            ResearchRoleModel.WriterDraft draft;
+            try {
+                draft = roles.writeReport(question, modules, verifiedClaims, statusCards,
+                        calculations, excluded, synthesisSkill);
+            } catch (Exception e) {
+                draft = null;
+                excluded.put("写作Agent", "写作 Agent 输出无效，报告降级为仅含已核验结论：" + e.getMessage());
+                store.stage(runId, "synthesis", "failed", Map.of("modules", modules.size()),
+                        Map.of("reason", String.valueOf(e.getMessage())));
+            }
+            List<Claim> writerClaims = new ArrayList<>();
+            List<String> writerRejected = new ArrayList<>();
+            if (draft != null) {
+                for (ResearchRoleModel.WriterIndicator item : draft.indicators().stream().limit(12).toList()) {
+                    if (item == null || item.text() == null || item.text().isBlank()
+                            || item.indicator() == null || item.indicator().isBlank()) continue;
+                    List<String> basis = item.basisClaimIds() == null ? List.of() : item.basisClaimIds();
+                    List<String> sourceIds = resolveBasisSources(basis, claimById, calculationById, fieldSourceIds);
                     if (sourceIds.isEmpty()) {
-                        rejected.add("比较结论没有可引用来源：" + candidate.text());
+                        writerRejected.add(item.indicator() + "：正文依据不可解析");
                         continue;
                     }
-                    claims.add(new Claim(task.id() + "-" + UUID.randomUUID(), candidate.text(),
-                            sourceIds, calculationId, value, unit));
+                    // 正文中的数字必须能回溯到依据材料（已核验结论/卡片/计算），否则弃用该指标
+                    StringBuilder basisPool = new StringBuilder();
+                    for (String ref : basis) {
+                        Claim claim = claimById.get(ref);
+                        if (claim != null) basisPool.append(' ').append(claim.text().replace(",", ""));
+                        Calculation calc = calculationById.get(ref);
+                        if (calc != null) basisPool.append(' ').append(calc.formula()).append(' ')
+                                .append(calc.value()).append(calc.unit());
+                        List<String> cardSources = fieldSourceIds.get(ref);
+                        if (cardSources != null) basisPool.append(' ').append(ref);
+                    }
+                    for (ReportDocument.StatusCard card : statusCards)
+                        for (ReportDocument.CardField field : card.fields())
+                            basisPool.append(' ').append(field.value().replace(",", ""));
+                    Matcher numbers = NUMBERS.matcher(item.text());
+                    boolean unsupported = false;
+                    while (numbers.find())
+                        if (!basisPool.toString().contains(numbers.group().replace(",", ""))) {
+                            unsupported = true;
+                            break;
+                        }
+                    if (unsupported) {
+                        writerRejected.add(item.indicator() + "：正文含无法回溯的数字");
+                        continue;
+                    }
+                    Claim claim = new Claim("ind-" + UUID.randomUUID(), item.text(),
+                            sourceIds, null, null, null);
+                    writerClaims.add(claim);
+                    claimById.put(claim.id(), claim);
+                    indicatorsByDimension.computeIfAbsent(
+                                    item.dimension() == null ? "综合分析" : item.dimension(), key -> new ArrayList<>())
+                            .add(0, new Indicator("w-" + indicatorsByDimension.size(), item.indicator(),
+                                    List.of(claim), null));
                 }
-                store.stage(runId, "compare:" + task.id(), "done",
-                        Map.of("sourceCalculations", calculations.size()),
-                        Map.of("acceptedClaimIds", claims.stream().map(Claim::id).toList(), "rejected", rejected));
-                emit(sessionId, step, "verification", task.id(),
-                        "比较结论核验：" + claims.size() + " 条通过、" + rejected.size() + " 条被拒",
-                        Map.of("note", claims.size() + " 条通过、" + rejected.size() + " 条被拒",
-                                "data", Map.of("rejected", rejected)));
-                if (claims.isEmpty()) {
-                    excluded.put(task.indicator(), "比较结论未通过与计算或结论的一致性核对");
-                    continue;
-                }
-                verifiedClaims.addAll(claims);
-                claimById.putAll(claims.stream().collect(Collectors.toMap(Claim::id, c -> c)));
-                indicatorsByDimension.computeIfAbsent(task.dimension(), key -> new ArrayList<>())
-                        .add(new Indicator(task.id(), task.indicator(), claims, null));
+                for (String dropped : draft.droppedIndicators() == null ? List.<String>of() : draft.droppedIndicators())
+                    excluded.put("未采用：" + dropped, "写作 Agent 判定材料不足或不适用");
+                verifiedClaims.addAll(writerClaims);
+                store.stage(runId, "writer", "done",
+                        Map.of("modules", modules.size()),
+                        Map.of("acceptedIndicators", writerClaims.stream()
+                                        .map(c -> c.text().length() > 40 ? c.text().substring(0, 40) : c.text()).toList(),
+                                "rejected", writerRejected, "dropped", draft.droppedIndicators()));
+                emit(sessionId, step, "writer", null,
+                        "写作完成：采用 " + writerClaims.size() + " 项指标、弃用 "
+                                + (draft.droppedIndicators() == null ? 0 : draft.droppedIndicators().size()) + " 项",
+                        Map.of("note", "采用 " + writerClaims.size() + " 项；拒 " + writerRejected.size() + " 项",
+                                "data", Map.of("rejected", writerRejected)));
             }
             indicatorsByDimension.forEach((name, indicators) ->
                     dimensions.add(new Dimension(name, List.copyOf(indicators))));
 
-            progress.accept("汇总 Agent：生成差距矩阵、摘要与整体研判");
-            String synthesisSkill = invokeSkill(runId, sessionId, step, "synthesis",
-                    "ci-analysis-methods", question);
-            ResearchRoleModel.Synthesis synthesis = roles.synthesize(question, verifiedClaims,
-                    statusCards, calculations, excluded, synthesisSkill);
-            List<Claim> abstractLines = synthesisClaims("abstract", synthesis.abstractLines(),
-                    verifiedClaims, statusCards, calculations);
-            List<Claim> summaryLines = synthesisClaims("summary", synthesis.summaryLines(),
-                    verifiedClaims, statusCards, calculations);
-            List<Claim> overallLines = synthesisClaims("overall", synthesis.overallAssessment(),
-                    verifiedClaims, statusCards, calculations);
+            List<Claim> abstractLines;
+            List<Claim> summaryLines;
+            List<Claim> overallLines;
+            List<ReportDocument.GapRow> gapMatrix = new ArrayList<>();
+            if (draft != null) {
+                abstractLines = synthesisClaims("abstract", draft.abstractLines(),
+                        verifiedClaims, statusCards, calculations);
+                summaryLines = synthesisClaims("summary", draft.summaryLines(),
+                        verifiedClaims, statusCards, calculations);
+                overallLines = synthesisClaims("overall", draft.overallAssessment(),
+                        verifiedClaims, statusCards, calculations);
+                for (ResearchRoleModel.GapRow row : draft.gapMatrix().stream().limit(6).toList()) {
+                    String failure = gapRowFailure(row, verifiedClaims, statusCards, calculations);
+                    if (failure != null) {
+                        store.stage(runId, "gap-matrix-reject", "done", Map.of("aspect", row.aspect()),
+                                Map.of("reason", failure));
+                        continue;
+                    }
+                    gapMatrix.add(new ReportDocument.GapRow(row.aspect(), row.usStatus(), row.cnStatus(),
+                            row.gapStatement(), row.evidenceStrength(), row.basisClaimIds()));
+                }
+            } else {
+                abstractLines = List.of();
+                summaryLines = List.of();
+                overallLines = List.of();
+            }
             if (abstractLines.isEmpty()) abstractLines = verifiedClaims.stream().limit(2).toList();
             if (summaryLines.isEmpty()) summaryLines = verifiedClaims.stream()
                     .skip(Math.max(0, verifiedClaims.size() - 2)).toList();
-            List<ReportDocument.GapRow> gapMatrix = new ArrayList<>();
-            for (ResearchRoleModel.GapRow row : synthesis.gapMatrix().stream().limit(6).toList()) {
-                String failure = gapRowFailure(row, verifiedClaims, statusCards, calculations);
-                if (failure != null) {
-                    store.stage(runId, "gap-matrix-reject", "done", Map.of("aspect", row.aspect()),
-                            Map.of("reason", failure));
-                    continue;
-                }
-                gapMatrix.add(new ReportDocument.GapRow(row.aspect(), row.usStatus(), row.cnStatus(),
-                        row.gapStatement(), row.evidenceStrength(), row.basisClaimIds()));
-            }
             store.stage(runId, "synthesis", "done", Map.of("question", question,
                             "verifiedClaimIds", verifiedClaims.stream().map(Claim::id).toList()),
                     Map.of("abstract", abstractLines, "summary", summaryLines,
@@ -577,6 +625,23 @@ public class QuestionReportPipeline {
         return claims.stream().filter(claim -> claim.calculationId() == null).toList();
     }
 
+    /** 依据引用（已核验结论 id、卡片字段引用、计算 id）解析为可引用来源列表。 */
+    private List<String> resolveBasisSources(List<String> refs, Map<String, Claim> claimById,
+                                             Map<String, Calculation> calculationById,
+                                             Map<String, List<String>> fieldSourceIds) {
+        List<String> sources = new ArrayList<>();
+        for (String ref : refs) {
+            if (ref == null || ref.isBlank()) continue;
+            Claim claim = claimById.get(ref);
+            if (claim != null) sources.addAll(claim.sourceIds());
+            Calculation calc = calculationById.get(ref);
+            if (calc != null) sources.addAll(calc.inputIds().stream()
+                    .flatMap(input -> fieldSourceIds.getOrDefault(input, List.of()).stream()).toList());
+            sources.addAll(fieldSourceIds.getOrDefault(ref, List.of()));
+        }
+        return sources.stream().distinct().toList();
+    }
+
     private Map<String, List<String>> fieldSourceIndex(List<ReportDocument.StatusCard> cards) {
         Map<String, List<String>> index = new LinkedHashMap<>();
         for (ReportDocument.StatusCard card : cards)
@@ -627,33 +692,6 @@ public class QuestionReportPipeline {
     /** Whole-number ratios read naturally without a trailing .0 in report text. */
     static String ratioText(double ratio) {
         return ratio == Math.rint(ratio) ? String.valueOf((long) ratio) : String.valueOf(ratio);
-    }
-
-    private String compareRejection(ResearchRoleModel.CompareClaimDraft candidate,
-                                    Map<String, Calculation> calculations, Map<String, Claim> claims,
-                                    Map<String, List<String>> fieldSourceIds) {
-        if (candidate == null || candidate.text() == null || candidate.text().isBlank()) return "结论为空";
-        if ("calc".equals(candidate.kind())) {
-            Calculation calculation = candidate.calculationId() == null
-                    ? null : calculations.get(candidate.calculationId());
-            if (calculation == null) return "引用的计算不存在：" + candidate.calculationId();
-            if (!candidate.text().contains(calculation.value()))
-                return "结论数字与计算值不一致：" + calculation.value();
-            if (!fieldSourceIds.containsKey(calculation.inputIds().get(0))
-                    || !fieldSourceIds.containsKey(calculation.inputIds().get(1)))
-                return "计算输入字段缺失";
-            return null;
-        }
-        if (candidate.basisClaimIds() == null || candidate.basisClaimIds().isEmpty()
-                || candidate.basisClaimIds().stream().anyMatch(id -> !claims.containsKey(id)))
-            return "basisClaimIds 缺失或不存在";
-        String basis = String.join(" ", candidate.basisClaimIds().stream()
-                .map(id -> claims.get(id).text()).toList());
-        Matcher numbers = NUMBERS.matcher(candidate.text());
-        while (numbers.find())
-            if (!basis.replace(",", "").contains(numbers.group().replace(",", "")))
-                return "结论数值不在依据结论中：" + numbers.group();
-        return null;
     }
 
     private String gapRowFailure(ResearchRoleModel.GapRow row, List<Claim> verified,

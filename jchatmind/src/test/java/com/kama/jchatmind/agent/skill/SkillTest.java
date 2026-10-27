@@ -365,15 +365,17 @@ class SkillTest {
     }
 
     @Test
-    @DisplayName("数据资源 Skill 固定 SpaceNews 样本与快照边界")
+    @DisplayName("数据资源 Skill 固定新闻样本、快照边界与官方政策源")
     void testDataResourceSkillRequiresSnapshotAndBoundedNewsEvidence() {
         String instructions = registeredSkill("data-resource-rules").getInstructions();
 
         assertAll(
-                () -> assertTrue(instructions.contains("SpaceNews 报道样本")),
+                () -> assertTrue(instructions.contains("新闻报道样本")),
                 () -> assertTrue(instructions.contains("snapshot_id")),
                 () -> assertTrue(instructions.contains("测试文档不得进入正式")),
-                () -> assertTrue(instructions.contains("本阶段不调用外部 Web")),
+                () -> assertTrue(instructions.contains("官方政策与战略文件")),
+                () -> assertTrue(instructions.contains("whitehouse.gov")),
+                () -> assertTrue(instructions.contains("cnsa.gov.cn")),
                 () -> assertTrue(instructions.contains("新闻转述，原始来源未核验")),
                 () -> assertTrue(instructions.contains("报道篇数代替事件数"))
         );
@@ -385,7 +387,7 @@ class SkillTest {
         String instructions = registeredSkill("ci-analysis-methods").getInstructions();
 
         assertAll(
-                () -> assertTrue(instructions.contains("0 组严格可比对")),
+                () -> assertTrue(instructions.contains("严格可比对数量应由本次快照计算")),
                 () -> assertTrue(instructions.contains("论文数")),
                 () -> assertTrue(instructions.contains("参数记录数")),
                 () -> assertTrue(instructions.contains("流量")),
